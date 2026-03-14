@@ -56,6 +56,12 @@ TEXT2     = "#57534E"   # stone-600
 TEXT3     = "#78716C"   # stone-500
 WHITE     = "#FFFFFF"
 
+# Valid recognition engines (no legacy engines)
+VALID_ENGINES = ["google", "azure", "bing"]
+
+# Settings file path
+SETTINGS_PATH = "settings.json"
+
 
 def _f(size, weight="normal", family="Segoe UI"):
     return ctk.CTkFont(family=family, size=size, weight=weight)
@@ -150,30 +156,128 @@ class VoiceTranscriberGUI(ctk.CTk):
         self.identify_file_var= tk.StringVar()
         self.max_speakers_var = tk.StringVar(value="5")
         # AI enhancement (Gemini BYOK)
-        self.ai_model_var     = tk.StringVar(value="")
+        self.ai_model_var     = tk.StringVar(value="gemini-1.5-flash")
         self.ai_api_key_var   = tk.StringVar()
 
-        # Build
+        # Load persisted settings into vars (before UI, so we know if we have API key)
+        self._load_settings_into_vars()
+
+        # Build UI (onboarding + main app)
         self._build_ui()
         self._load_speaker_profiles()
-        self._load_settings_silent()
+        # Sync combos with vars (e.g. engine always valid)
+        self._sync_engine_combos()
+        # Show setup wizard if no API key, else main app
+        self._decide_initial_view()
 
     # ── UI Construction ───────────────────────────────────────────
 
     def _build_ui(self):
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=0)
-        self.grid_columnconfigure(0, weight=0)
-        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
-        self._build_sidebar()
-        self._build_main()
+        # Content area: either setup wizard or main app
+        self._content = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        self._content.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        self._content.grid_rowconfigure(0, weight=1)
+        self._content.grid_columnconfigure(0, weight=1)
+
+        # Setup wizard (step 1: API key)
+        self._setup_frame = ctk.CTkFrame(self._content, fg_color=BG)
+        self._setup_frame.grid(row=0, column=0, sticky="nsew")
+        self._setup_frame.grid_rowconfigure(0, weight=1)
+        self._setup_frame.grid_columnconfigure(0, weight=1)
+        self._build_setup_wizard()
+
+        # Main app (sidebar + main area) — created now, shown later via _show_main
+        self._main_frame = ctk.CTkFrame(self._content, fg_color=BG)
+        self._main_frame.grid_rowconfigure(0, weight=1)
+        self._main_frame.grid_columnconfigure(0, weight=0)
+        self._main_frame.grid_columnconfigure(1, weight=1)
+        self._build_sidebar(self._main_frame)
+        self._build_main(self._main_frame)
+
         self._build_statusbar()
+
+    # ── Setup wizard ───────────────────────────────────────────────
+
+    def _build_setup_wizard(self):
+        center = ctk.CTkFrame(self._setup_frame, fg_color="transparent")
+        center.grid(row=0, column=0, sticky="nswe")
+        center.grid_rowconfigure(0, weight=1)
+        center.grid_columnconfigure(0, weight=1)
+
+        card = ctk.CTkFrame(center, fg_color=SURFACE, corner_radius=16,
+                            border_width=1, border_color=BORDER, width=420)
+        card.grid(row=0, column=0)
+        card.grid_propagate(False)
+        card.grid_rowconfigure(4, weight=1)
+        card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(card, text="🎤", font=_f(40), text_color=TEXT).grid(
+            row=0, column=0, pady=(32, 8))
+        ctk.CTkLabel(card, text="Welcome to Troice",
+                     font=_f(22, "bold"), text_color=TEXT).grid(
+            row=1, column=0, padx=32, pady=(0, 4))
+        ctk.CTkLabel(card, text="Voice transcription made simple.\nOne step to get started.",
+                     font=_f(13), text_color=TEXT2, justify="center").grid(
+            row=2, column=0, padx=32, pady=(0, 24))
+
+        ctk.CTkLabel(card, text="Gemini API key",
+                     font=_f(12, "bold"), text_color=TEXT2).grid(
+            row=3, column=0, sticky="w", padx=32, pady=(0, 6))
+        self._setup_api_entry = ctk.CTkEntry(
+            card, textvariable=self.ai_api_key_var,
+            placeholder_text="Paste your key (saved locally)",
+            height=44, corner_radius=10,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13),
+            show="*"
+        )
+        self._setup_api_entry.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 12))
+        ctk.CTkLabel(card, text="Get a key: Google AI Studio",
+                     font=_f(11), text_color=BLUE, cursor="hand2").grid(
+            row=5, column=0, pady=(0, 20))
+
+        btn = ctk.CTkButton(
+            card, text="Save & open Troice",
+            height=44, corner_radius=10,
+            fg_color=ACCENT, hover_color=ACC_H, text_color=WHITE,
+            font=_f(14, "bold"), command=self._on_setup_complete
+        )
+        btn.grid(row=6, column=0, padx=32, pady=(0, 32))
+
+    def _on_setup_complete(self):
+        key = (self.ai_api_key_var.get() or "").strip()
+        if not key:
+            self._show_toast("Please enter your Gemini API key.", "orange")
+            return
+        self._persist_settings()
+        self._show_main()
+
+    def _show_setup(self):
+        self._setup_frame.grid()
+        self._main_frame.grid_remove()
+        if hasattr(self, "statusbar"):
+            self.statusbar.grid_remove()
+
+    def _show_main(self):
+        self._setup_frame.grid_remove()
+        self._main_frame.grid()
+        if hasattr(self, "statusbar"):
+            self.statusbar.grid(row=1, column=0, sticky="ew")
+
+    def _decide_initial_view(self):
+        if (self.ai_api_key_var.get() or "").strip():
+            self._show_main()
+        else:
+            self._show_setup()
 
     # ── Sidebar ───────────────────────────────────────────────────
 
-    def _build_sidebar(self):
-        sb = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, width=226)
+    def _build_sidebar(self, parent):
+        sb = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=0, width=226)
         sb.grid(row=0, column=0, sticky="ns")
         sb.grid_propagate(False)
         sb.grid_rowconfigure(5, weight=1)
@@ -254,8 +358,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
     # ── Main container ────────────────────────────────────────────
 
-    def _build_main(self):
-        self.main_area = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+    def _build_main(self, parent):
+        self.main_area = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
         self.main_area.grid(row=0, column=1, sticky="nsew")
         self.main_area.grid_rowconfigure(0, weight=1)
         self.main_area.grid_columnconfigure(0, weight=1)
@@ -270,7 +374,7 @@ class VoiceTranscriberGUI(ctk.CTk):
 
     def _build_statusbar(self):
         bar = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, height=46)
-        bar.grid(row=1, column=0, columnspan=2, sticky="ew")
+        bar.grid(row=1, column=0, sticky="ew")
         bar.grid_propagate(False)
         bar.grid_columnconfigure(1, weight=1)
         self.statusbar = bar
@@ -465,10 +569,9 @@ class VoiceTranscriberGUI(ctk.CTk):
         tips_card.pack(fill="x", pady=(0, 14))
 
         tips = [
-            ("🎤", "Use clear, noise-free audio for best accuracy"),
-            ("📁", "Supports WAV, MP3, M4A, FLAC, OGG, AAC"),
-            ("🌐", "Google engine requires internet connection"),
-            ("⚡", "Large files are auto-chunked for reliability"),
+            ("🎤", "Clear audio gives best accuracy"),
+            ("📁", "WAV, MP3, M4A, FLAC, OGG, AAC"),
+            ("⚡", "Large files are chunked automatically"),
         ]
         tips_inner = ctk.CTkFrame(tips_card, fg_color="transparent")
         tips_inner.pack(fill="x", padx=16, pady=(0, 14))
@@ -829,55 +932,29 @@ class VoiceTranscriberGUI(ctk.CTk):
             font=_f(11), text_color=TEXT3
         ).pack(anchor="w", pady=(8, 0))
 
-        # ─ AI Enhancement (Gemini 1.5 Flash, BYOK) ─────────────
-        ai_card = _card(body, "✨  AI ENHANCEMENT (GEMINI)", title_color=PURPLE)
+        # ─ API key (persisted) ───────────────────────────────────
+        ai_card = _card(body, "✨  GEMINI API KEY", title_color=PURPLE)
         ai_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 14))
 
         ai_inner = ctk.CTkFrame(ai_card, fg_color="transparent")
         ai_inner.pack(fill="x", padx=16, pady=(0, 16))
 
-        # Model selector (required before using Troice)
         ctk.CTkLabel(
             ai_inner,
-            text="AI model (required before uploading audio)",
-            font=_f(12), text_color=TEXT2
-        ).pack(anchor="w")
-        self.ai_model_combo = ctk.CTkComboBox(
-            ai_inner,
-            values=["gemini-1.5-flash"],
-            variable=self.ai_model_var,
-            width=260, height=38, corner_radius=8,
-            fg_color=SURFACE2, border_color=BORDER, border_width=1,
-            button_color=SURFACE3, button_hover_color=BORDER2,
-            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
-            text_color=TEXT, dropdown_text_color=TEXT,
-            font=_f(13),
-        )
-        self.ai_model_combo.pack(anchor="w", pady=(4, 10))
-
-        # API key entry (BYOK)
-        ctk.CTkLabel(
-            ai_inner,
-            text="Gemini API key (BYOK)",
+            text="API key is saved locally. Change it here if needed.",
             font=_f(12), text_color=TEXT2
         ).pack(anchor="w")
         self.ai_api_key_entry = ctk.CTkEntry(
             ai_inner,
             textvariable=self.ai_api_key_var,
-            placeholder_text="Paste your Google Gemini API key…",
+            placeholder_text="Gemini API key (saved locally)",
             height=38, corner_radius=8,
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
             text_color=TEXT, placeholder_text_color=TEXT3,
             font=_f(13),
             show="*",
         )
-        self.ai_api_key_entry.pack(fill="x", pady=(4, 4))
-
-        ctk.CTkLabel(
-            ai_inner,
-            text="ⓘ  Your key is used locally by Troice only. It is not stored or sent anywhere else.",
-            font=_f(11), text_color=TEXT3, wraplength=520, justify="left"
-        ).pack(anchor="w", pady=(4, 0))
+        self.ai_api_key_entry.pack(fill="x", pady=(4, 8))
 
         # ─ Presets section ──────────────────────────────────
         preset_card = _card(body, "⚡  QUICK PRESETS", title_color=ACCENT)
@@ -1588,60 +1665,84 @@ class VoiceTranscriberGUI(ctk.CTk):
         self.update_status(f"Preset applied: {lang} · {engine} · {sr_} Hz", ACCENT)
         self._show_toast("Preset applied!", "blue")
 
-    def save_settings(self):
+    def _load_settings_into_vars(self):
+        """Load settings from file into StringVars (no UI). Normalize engine to valid value."""
+        try:
+            if not os.path.exists(SETTINGS_PATH):
+                return
+            with open(SETTINGS_PATH, encoding="utf-8") as f:
+                s = json.load(f)
+            self.language_var.set(s.get("language", "en-US"))
+            engine = s.get("engine", "google")
+            if engine not in VALID_ENGINES:
+                engine = "google"
+            self.engine_var.set(engine)
+            self.sample_rate_var.set(str(s.get("sample_rate", "16000")))
+            self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
+            self.ai_api_key_var.set(s.get("gemini_api_key", ""))
+            self.transcriber.set_language(self.language_var.get())
+            self.transcriber.set_engine(engine)
+        except Exception:
+            pass
+
+    def _sync_engine_combos(self):
+        """Ensure engine combos show a valid value (fixes legacy e.g. sphinx)."""
+        engine = self.engine_var.get()
+        if engine not in VALID_ENGINES:
+            engine = "google"
+            self.engine_var.set(engine)
+            self.transcriber.set_engine(engine)
+        if hasattr(self, "engine_combo"):
+            self.engine_combo.set(engine)
+        if hasattr(self, "settings_engine_combo"):
+            self.settings_engine_combo.set(engine)
+
+    def _persist_settings(self):
+        """Save current settings (including API key) to disk."""
+        engine = self.engine_var.get()
+        if engine not in VALID_ENGINES:
+            engine = "google"
+            self.engine_var.set(engine)
         settings = {
             "language": self.language_var.get(),
-            "engine": self.engine_var.get(),
+            "engine": engine,
             "sample_rate": self.sample_rate_var.get(),
             "ai_model": self.ai_model_var.get(),
-            # API key is BYOK; we do NOT persist it to disk for safety.
+            "gemini_api_key": (self.ai_api_key_var.get() or "").strip(),
         }
         try:
-            with open("settings.json", "w") as f:
+            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=2)
-            self._show_toast("Settings saved!", "green")
         except Exception as e:
-            self._show_toast(f"Save failed: {e}", "red")
+            logger.warning(f"Could not save settings: {e}")
+
+    def save_settings(self):
+        self._persist_settings()
+        self._show_toast("Settings saved!", "green")
 
     def load_settings(self):
         try:
-            if os.path.exists("settings.json"):
-                with open("settings.json") as f:
-                    s = json.load(f)
-                lang   = s.get("language", "en-US")
-                engine = s.get("engine",   "google")
-                sr_    = str(s.get("sample_rate", "16000"))
-                # Restore AI model selection if present
-                self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
-                try:
-                    self.ai_model_combo.set(self.ai_model_var.get())
-                except Exception:
-                    pass
-                self._apply_preset(lang, engine, sr_)
-                self._show_toast("Settings loaded!", "green")
-            else:
+            if not os.path.exists(SETTINGS_PATH):
                 self._show_toast("No saved settings found", "orange")
+                return
+            with open(SETTINGS_PATH, encoding="utf-8") as f:
+                s = json.load(f)
+            lang = s.get("language", "en-US")
+            engine = s.get("engine", "google")
+            if engine not in VALID_ENGINES:
+                engine = "google"
+            sr_ = str(s.get("sample_rate", "16000"))
+            self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
+            self.ai_api_key_var.set(s.get("gemini_api_key", ""))
+            try:
+                if hasattr(self, "ai_model_combo"):
+                    self.ai_model_combo.set(self.ai_model_var.get())
+            except Exception:
+                pass
+            self._apply_preset(lang, engine, sr_)
+            self._show_toast("Settings loaded!", "green")
         except Exception as e:
             self._show_toast(f"Load failed: {e}", "red")
-
-    def _load_settings_silent(self):
-        try:
-            if os.path.exists("settings.json"):
-                with open("settings.json") as f:
-                    s = json.load(f)
-                self.language_var.set(s.get("language", "en-US"))
-                self.engine_var.set(s.get("engine", "google"))
-                self.sample_rate_var.set(str(s.get("sample_rate", "16000")))
-                self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
-                try:
-                    if hasattr(self, "ai_model_combo"):
-                        self.ai_model_combo.set(self.ai_model_var.get())
-                except Exception:
-                    pass
-                self.transcriber.set_language(s.get("language", "en-US"))
-                self.transcriber.set_engine(s.get("engine", "google"))
-        except Exception:
-            pass
 
     # ─────────────────────────────────────────────────────────────
     #  AI enhancement helpers (Gemini 1.5 Flash BYOK)
