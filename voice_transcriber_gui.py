@@ -13,6 +13,7 @@ import json
 from typing import Optional, Callable
 import time
 import logging
+import speech_recognition as sr
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1456,7 +1457,9 @@ class VoiceTranscriberGUI:
                             # Display result LIVE if there's text
                             if result.get('text') and result['text'].strip():
                                 text = result['text']
-                                # Append to live transcription immediately
+                                # Remove disfluencies for live transcription too
+                                text = self.transcriber._remove_disfluencies(text)
+                                # Append to live transcription immediately (0ms delay)
                                 self.root.after(
                                     0, lambda t=text: self.results_text.insert(tk.END, t + " "))
                                 self.root.after(
@@ -1464,7 +1467,12 @@ class VoiceTranscriberGUI:
                                 logger.info(f"Displayed live text: {text[:30]}...")
 
                             # No artificial delay - keep listening immediately
+                            # Loop continues immediately to start next listen cycle
                             
+                        except sr.WaitTimeoutError:
+                            # No speech detected - this is normal, just keep listening
+                            # No delay needed - immediately continue to next listen cycle
+                            continue
                         except Exception as e:
                             logger.error(f"Recording error: {str(e)}")
                             self.root.after(0, lambda e=e: self.show_notification(
