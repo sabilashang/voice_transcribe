@@ -662,9 +662,9 @@ class VoiceTranscriber:
                             callback(
                                 progress, f"Processing chunk {chunk_num + 1} ({chunk_duration:.1f}s at {offset:.1f}s)...")
 
-                        # Record chunk with offset
+                        # Record chunk - stream advances naturally, do NOT pass offset
                         audio = self.recognizer.record(
-                            source, duration=chunk_duration, offset=offset)
+                            source, duration=chunk_duration)
 
                         # Transcribe chunk
                         text = self._recognize_speech(audio)
@@ -713,9 +713,9 @@ class VoiceTranscriber:
                                 chunk_duration_retry = min(
                                     chunk_duration_retry, duration - offset)
 
-                                # Try again with slightly different settings
+                                # Try again - stream already advanced, can't re-read same chunk
                                 audio = self.recognizer.record(
-                                    source, duration=chunk_duration_retry, offset=offset)
+                                    source, duration=chunk_duration_retry)
                                 text = self._recognize_speech(
                                     audio, retry_on_error=False)
 
@@ -787,7 +787,7 @@ class VoiceTranscriber:
                                     chunk_duration_retry, duration - offset)
 
                                 audio = self.recognizer.record(
-                                    source, duration=chunk_duration_retry, offset=offset)
+                                    source, duration=chunk_duration_retry)
                                 text = self._recognize_speech(
                                     audio, retry_on_error=False)
 
