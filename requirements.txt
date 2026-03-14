@@ -1,0 +1,37 @@
+# Voice Transcriber with Speaker Detection - Core Requirements
+
+# Core Speech Recognition
+SpeechRecognition==3.10.0
+pyaudio==0.2.11
+
+# Audio Processing
+librosa==0.10.1
+soundfile==0.12.1
+pydub==0.25.1
+scipy==1.11.4
+
+# Speaker Diarization and Voice Analysis
+pyannote.audio==3.1.1
+resemblyzer==0.1.1
+speechbrain==0.5.16
+
+# Machine Learning and Data Processing
+numpy==1.24.3
+scikit-learn==1.3.2
+pandas==2.1.4
+torch==2.1.2
+torchaudio==2.1.2
+
+# GUI Framework
+tkinter-tooltip==2.0.0
+customtkinter==5.2.2
+
+# File Handling and Utilities
+python-dotenv==1.0.0
+tqdm==4.66.1
+matplotlib==3.8.2
+seaborn==0.13.0
+
+# Advanced features
+transformers==4.36.2
+datasets==2.15.0

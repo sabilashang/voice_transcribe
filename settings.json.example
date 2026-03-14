@@ -1,0 +1,8 @@
+{
+    "language": "en-US",
+    "engine": "google",
+    "sample_rate": 16000,
+    "max_speakers": 5,
+    "chunk_duration": 30.0
+}
+
