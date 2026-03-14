@@ -25,19 +25,48 @@ Voice Transcriber is a comprehensive Python-based system that converts speech to
 
 ## Quick Start
 
-### Installation
+### 1. Prerequisites
+
+- **Python**: 3.8 or higher (3.10+ recommended)
+- **OS**: Windows, macOS, or Linux
+- **Audio**: A working microphone (for live transcription)
+- **Optional (recommended)**: `ffmpeg` for full `.m4a` / advanced format support  
+  - Windows: Download from `https://ffmpeg.org` and add `ffmpeg\bin` to your `PATH`
+  - macOS (Homebrew): `brew install ffmpeg`
+  - Linux (Debian/Ubuntu): `sudo apt-get install ffmpeg`
+
+### 2. Clone and install
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/sabilashang/voice_transcribe.git
 cd voice_transcribe
 
-# Install dependencies
-pip install -r requirements.txt
+# (Recommended) create a virtual environment
+python -m venv .venv
 
-# Run the application
+# Activate it
+# Windows (PowerShell)
+.venv\Scripts\Activate.ps1
+# macOS / Linux
+source .venv/bin/activate
+
+# Install runtime dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 3. Run the application (GUI)
+
+```bash
+# Easiest entrypoint
+python launch_gui.py
+
+# Or run the GUI module directly
 python voice_transcriber_gui.py
 ```
+
+This opens the main Troice GUI with all tabs (Transcription, Speaker Detection, Speaker Management, Settings).
 
 ### Live Transcription Quick Guide
 
@@ -50,9 +79,10 @@ python voice_transcriber_gui.py
 
 ### Usage
 
-Launch the GUI application:
+Launch the GUI application from the project root:
+
 ```bash
-python voice_transcriber_gui.py
+python launch_gui.py
 ```
 
 The application provides four main tabs:
@@ -77,11 +107,13 @@ The application provides four main tabs:
 - Multi-language support: English, Spanish, French, German, and more
 - Accuracy: >90% for clear speech with automatic retry logic
 
-### Speaker Diarization
+### Speaker Diarization (Optional, In Development)
 - Advanced ML-based voice feature extraction (MFCC, spectral features)
 - Automatic speaker clustering and identification
 - Voice profile creation and matching
-- Accuracy: >85% for distinct voices
+- Available from the **Speaker Detection** and **Speaker Management** tabs
+- Marked as **experimental / in active development** – APIs and behavior may change
+- **Not required** for basic transcription; core speech-to-text works without diarization
 
 ### Performance
 - Real-time processing for short segments
@@ -119,6 +151,16 @@ English (US/UK), Spanish, French, German, Italian, Portuguese, Russian, Japanese
 - **Google** - High accuracy, requires internet
 - **Sphinx** - Offline processing
 - **Azure/Bing** - Enterprise options (API key required)
+
+### Long Audio and Large Files
+
+- Files longer than **60 seconds** are processed with intelligent chunking:
+  - Base chunk size: **30 seconds**
+  - For very long audio (e.g. **3+ hours**), the engine:
+    - Keeps internal chunks under ~**20 minutes** to stay within API/time limits
+    - Tries to **break at natural pauses** (silence) when approaching that limit
+    - Streams recognized text into the GUI as chunks complete
+- This makes long recordings (meetings, podcasts, lectures) feel seamless to the user while staying robust against API constraints.
 
 ## Development
 

@@ -82,6 +82,7 @@ class VoiceTranscriberGUI:
         self.is_paused = False
         self.continuous_recording_active = False
         self.current_file = None
+        self.file_queue = []  # Optional queue for multiple files
         self.transcription_results = []
         self.speaker_results = None
         self.animation_running = False
@@ -422,13 +423,23 @@ class VoiceTranscriberGUI:
 
         self.transcribe_file_button = ctk.CTkButton(
             button_row,
-            text="🎯 Transcribe File",
+            text="🎯 Transcribe File(s)",
             command=self.transcribe_file,
             fg_color=COLORS['success'],
             hover_color='#90EE90',
             **button_config
         )
         self.transcribe_file_button.pack(side="left", padx=(0, 10))
+
+        self.add_file_button = ctk.CTkButton(
+            button_row,
+            text="➕ Add Another File",
+            command=self.add_another_file,
+            fg_color=COLORS['accent_secondary'],
+            hover_color='#A855F7',
+            **button_config
+        )
+        self.add_file_button.pack(side="left", padx=(0, 10))
 
         self.clear_button = ctk.CTkButton(
             button_row,
@@ -449,6 +460,7 @@ class VoiceTranscriberGUI:
             **button_config
         )
         self.export_results_button.pack(side="left")
+        self.export_results_button.configure(state="disabled")
 
         # Results section with modern card design
         results_card = ctk.CTkFrame(
@@ -868,8 +880,33 @@ class VoiceTranscriberGUI:
         if file_path:
             self.file_path_var.set(file_path)
             self.current_file = file_path
+            # Reset queue when a primary file is chosen
+            self.file_queue = []
             # Get and display audio duration
             self.display_audio_duration(file_path)
+
+    def add_another_file(self):
+        """Add one or more extra files to a processing queue"""
+        file_paths = filedialog.askopenfilenames(
+            title="Add Additional Audio Files",
+            filetypes=[
+                ("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"),
+                ("WAV files", "*.wav"),
+                ("MP3 files", "*.mp3"),
+                ("M4A files", "*.m4a"),
+                ("All files", "*.*")
+            ]
+        )
+        if file_paths:
+            # Initialize queue with current file if set and not already queued
+            if self.current_file and self.current_file not in self.file_queue:
+                self.file_queue.append(self.current_file)
+
+            for p in file_paths:
+                if p not in self.file_queue:
+                    self.file_queue.append(p)
+
+            self.update_status(f"📁 {len(self.file_queue)} file(s) queued for transcription")
 
     def display_audio_duration(self, file_path):
         """Display audio file duration information"""
@@ -941,14 +978,21 @@ class VoiceTranscriberGUI:
 
     def transcribe_file(self):
         """Transcribe selected audio file"""
-        if not self.file_path_var.get():
+        # Build list of files to process: queue (if any) or single current file
+        files_to_process = []
+        if self.file_queue:
+            files_to_process = self.file_queue.copy()
+        elif self.file_path_var.get():
+            files_to_process = [self.file_path_var.get()]
+
+        if not files_to_process:
             messagebox.showerror("Error", "Please select an audio file first")
             return
 
-        # Get audio duration for confirmation dialog
+        # For confirmation, we show info about the first file
+        first_file = files_to_process[0]
         try:
-            audio_info = self.audio_processor.get_audio_info(
-                self.file_path_var.get())
+            audio_info = self.audio_processor.get_audio_info(first_file)
             duration = audio_info['duration']
 
             # Format duration as MM:SS or HH:MM:SS
@@ -961,71 +1005,83 @@ class VoiceTranscriberGUI:
                 duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
             # Show confirmation dialog
-            file_name = os.path.basename(self.file_path_var.get())
-            confirm_message = f"File: {file_name}\nDuration: {duration_str}\n\nDo you want to transcribe this audio file?"
+            file_name = os.path.basename(first_file)
+            extra = ""
+            if len(files_to_process) > 1:
+                extra = f"\n(+ {len(files_to_process) - 1} more file(s) in queue)"
+            confirm_message = f"File: {file_name}{extra}\nDuration: {duration_str}\n\nDo you want to transcribe selected file(s)?"
 
             if not messagebox.askyesno("Confirm Transcription", confirm_message):
                 return
 
         except Exception as e:
             # If we can't get duration, still show confirmation
-            file_name = os.path.basename(self.file_path_var.get())
-            confirm_message = f"File: {file_name}\n\nDo you want to transcribe this audio file?"
+            file_name = os.path.basename(first_file)
+            extra = ""
+            if len(files_to_process) > 1:
+                extra = f"\n(+ {len(files_to_process) - 1} more file(s) in queue)"
+            confirm_message = f"File: {file_name}{extra}\n\nDo you want to transcribe selected file(s)?"
 
             if not messagebox.askyesno("Confirm Transcription", confirm_message):
                 return
 
-        # Get duration for large file detection
-        file_duration = None
-        try:
-            file_duration = audio_info['duration']
-        except:
-            pass
-
         def transcribe_thread():
             try:
-                # Progress callback function
-                def update_progress(progress, message):
-                    self.root.after(0, lambda: self.progress_bar.set(progress))
-                    self.root.after(0, lambda: self.update_status(message))
-                    if is_large_file and hasattr(self, 'loading_progress'):
+                # Clear previous results before batch
+                self.root.after(0, lambda: self.results_text.delete(1.0, tk.END))
+
+                for idx, path in enumerate(files_to_process, start=1):
+                    # Get duration for large file detection
+                    file_duration = None
+                    try:
+                        info = self.audio_processor.get_audio_info(path)
+                        file_duration = info['duration']
+                    except Exception:
+                        pass
+
+                    # Per-file progress callback
+                    def update_progress(progress, message, file_index=idx, total=len(files_to_process)):
+                        label = f"[{file_index}/{total}] {message}"
+                        self.root.after(0, lambda p=progress: self.progress_bar.set(p))
+                        self.root.after(0, lambda m=label: self.update_status(m))
+                        if is_large_file and hasattr(self, 'loading_progress'):
+                            self.root.after(
+                                0, lambda p=progress, m=label: self.update_loading_progress(p, m))
+
+                    # Live text display callback for large files
+                    def display_live_text(text_chunk):
+                        """Append text chunks to results in real-time"""
                         self.root.after(
-                            0, lambda: self.update_loading_progress(progress, message))
+                            0, lambda t=text_chunk: self.results_text.insert(tk.END, t))
+                        self.root.after(0, lambda: self.results_text.see(tk.END))
 
-                # Live text display callback for large files
-                def display_live_text(text_chunk):
-                    """Append text chunks to results in real-time"""
-                    self.root.after(
-                        0, lambda: self.results_text.insert(tk.END, text_chunk))
-                    self.root.after(0, lambda: self.results_text.see(tk.END))
+                    is_large_file = file_duration is not None and file_duration > 120
+                    if is_large_file:
+                        self.show_loading_animation(f"Processing Large Audio File ({idx}/{len(files_to_process)})")
+                        # Show header for each large file
+                        header = f"\n🔴 LIVE TRANSCRIPTION ({idx}/{len(files_to_process)}): {os.path.basename(path)}\n" + "="*50 + "\n\n"
+                        self.root.after(0, lambda h=header: self.results_text.insert(tk.END, h))
 
-                # Show loading animation for large files
-                is_large_file = file_duration is not None and file_duration > 120
-                if is_large_file:
-                    self.show_loading_animation("Processing Large Audio File")
-                    # Clear previous results and show "Live Transcription" header
-                    self.root.after(
-                        0, lambda: self.results_text.delete(1.0, tk.END))
-                    self.root.after(0, lambda: self.results_text.insert(
-                        tk.END, "🔴 LIVE TRANSCRIPTION:\n" + "="*50 + "\n\n"))
+                    # Transcribe with progress callback and live display
+                    result = self.transcriber.transcribe_audio_file(
+                        path,
+                        callback=update_progress if is_large_file else None,
+                        live_display=display_live_text if is_large_file else None
+                    )
 
-                # Transcribe with progress callback and live display
-                result = self.transcriber.transcribe_audio_file(
-                    self.file_path_var.get(),
-                    callback=update_progress if is_large_file else None,
-                    live_display=display_live_text if is_large_file else None
-                )
+                    # Hide loading animation
+                    if is_large_file:
+                        self.hide_loading_animation()
 
-                # Hide loading animation
-                if is_large_file:
-                    self.hide_loading_animation()
-
-                # If not large file, display results normally
-                if not is_large_file:
-                    self.display_transcription_result(result)
+                    # For non-large files, display nicely with typing effect
+                    if not is_large_file:
+                        self.display_transcription_result(result)
 
                 self.progress_bar.set(1.0)
                 self.update_status("Transcription completed successfully")
+                # Enable export buttons after any successful transcription
+                self.root.after(0, lambda: self.export_results_button.configure(state="normal"))
+                self.root.after(0, lambda: self.export_button.configure(state="normal"))
 
                 # Auto-hide progress after 2 seconds
                 self.root.after(2000, lambda: self.progress_bar.set(0))
@@ -1474,6 +1530,9 @@ class VoiceTranscriberGUI:
             self.update_status("⏹️ Recording stopped")
             self.show_notification("⏹️ Recording stopped", "info")
             self.hide_loading_animation()
+            # Allow exporting any recorded content
+            self.export_results_button.configure(state="normal")
+            self.export_button.configure(state="normal")
         else:
             self.show_notification("⚠️ Not recording", "warning")
 
