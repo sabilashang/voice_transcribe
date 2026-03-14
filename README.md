@@ -5,7 +5,7 @@
 **Transform speech into text instantly. Professional transcription made simple.**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![GitHub stars](https://img.shields.io/github/stars/sabilashang/voice_transcribe?style=social)](https://github.com/sabilashang/voice_transcribe)
 
 [🚀 Quick Start](#quick-start) • [📖 Documentation](#usage) • [💡 Features](#key-features) • [🎯 Use Cases](#use-cases)
@@ -240,9 +240,13 @@ sudo apt-get install python3-pyaudio && pip install pyaudio
 - **Low accuracy** - Use higher quality audio, reduce background noise
 - **Slow processing** - Reduce sample rate or use shorter chunks
 
-## License
+## License & Attribution
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU General Public License v3.0 (GPL-3.0) - see the `LICENSE` file for details.
+
+If you use this project's **ideas, structure, or overall design** (including the real-time transcription flow, tab layout, or UI/UX patterns), please provide clear **attribution** in your project documentation, such as:
+
+> "Based on the `voice_transcribe` project by the Voice Transcriber Contributors (`https://github.com/sabilashang/voice_transcribe`)."
 
 ## Acknowledgments
 
@@ -259,7 +263,7 @@ Built with:
 ✅ **Truly Continuous** - Not batch processing. Real-time transcription that keeps up with you  
 ✅ **Beautiful UI** - Modern, intuitive interface that's a joy to use  
 ✅ **Production Ready** - Handles everything from quick notes to 3-hour recordings  
-✅ **Open Source** - MIT licensed, free to use and modify  
+✅ **Open Source** - GPL-3.0 licensed, free to use, modify, and share under the same terms  
 ✅ **Cross-Platform** - Works on Windows, macOS, and Linux  
 
 ## 📸 Screenshots
@@ -272,7 +276,7 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 (GPL-3.0) - see the [`LICENSE`](LICENSE) file for details.
 
 ---
 
