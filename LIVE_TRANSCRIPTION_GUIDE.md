@@ -75,7 +75,6 @@ python voice_transcriber_gui.py
 
 ### Recognition Engines
 - **Google (Default)**: High accuracy, requires internet
-- **Sphinx**: Offline mode, lower accuracy but no internet needed
 - Change engine in Settings tab
 
 ### Languages Supported
@@ -100,7 +99,6 @@ python voice_transcriber_gui.py
 **Solutions**:
 - Check internet connection (for Google engine)
 - Close other resource-intensive applications
-- Try Sphinx engine for offline processing
 - Ensure microphone drivers are up to date
 
 ### Inaccurate Transcription
@@ -175,7 +173,7 @@ while recording:
 ## FAQ
 
 **Q: Can I use this offline?**
-A: Yes, select "Sphinx" engine in Settings. Accuracy will be lower but works offline.
+A: Transcription currently requires an internet connection when using the Google engine.
 
 **Q: How long can I record?**
 A: There's no time limit. Record for hours if needed.

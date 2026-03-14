@@ -351,25 +351,6 @@ class VoiceTranscriber:
                     if isinstance(result, dict) and 'alternative' in result:
                         return result['alternative'][0]['transcript']
                     return result if isinstance(result, str) else ""
-                elif self.engine == 'sphinx':
-                    try:
-                        # Sphinx requires pocketsphinx to be installed
-                        result = self.recognizer.recognize_sphinx(audio)
-                        return result
-                    except AttributeError:
-                        logger.warning(
-                            "Sphinx not available, falling back to Google")
-                        # Fallback to Google
-                        result = self.recognizer.recognize_google(
-                            audio, language=self.language)
-                        return result if isinstance(result, str) else ""
-                    except OSError as e:
-                        logger.warning(
-                            f"Sphinx error: {str(e)}, falling back to Google")
-                        # Fallback to Google
-                        result = self.recognizer.recognize_google(
-                            audio, language=self.language)
-                        return result if isinstance(result, str) else ""
                 elif self.engine == 'azure':
                     # Note: Requires Azure Speech API key
                     return self.recognizer.recognize_azure(audio, language=self.language)
@@ -400,7 +381,7 @@ class VoiceTranscriber:
                     logger.error(f"Speech recognition service error: {str(e)}")
                     raise
             except Exception as e:
-                # Catch-all for other errors (like Sphinx not available)
+                # Catch-all for other errors
                 attempts += 1
                 if attempts < max_attempts:
                     logger.warning(
@@ -466,21 +447,7 @@ class VoiceTranscriber:
         logger.info(f"Language changed to: {language}")
 
     def set_engine(self, engine: str) -> None:
-        """Change recognition engine.
-
-        Note:
-            The legacy 'sphinx' engine has been removed from the UI because of
-            reliability issues. If it is requested (for example from an older
-            settings.json), we transparently fall back to 'google' to avoid
-            hard failures.
-        """
-        if engine == "sphinx":
-            logger.warning(
-                "Sphinx engine requested but no longer supported; "
-                "falling back to 'google'."
-            )
-            engine = "google"
-
+        """Change recognition engine."""
         if engine not in ["google", "azure", "bing"]:
             raise ValueError(f"Unsupported engine: {engine}")
 

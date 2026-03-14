@@ -19,9 +19,8 @@ Handles all audio-related operations:
 ### 2. Voice Transcriber (`voice_transcriber.py`)
 Core transcription engine:
 - **Speech Recognition**:
-  - Multiple engine support (Google, Sphinx, Azure, Bing)
+  - Multiple engine support (Google, Azure, Bing)
   - Retry logic with exponential backoff (3 attempts per chunk)
-  - Automatic fallback from Sphinx to Google
 - **Language Support**: Multi-language recognition with confidence scoring
 - **Large File Handling**: 
   - Streaming processing for 100+ MB files
@@ -91,7 +90,7 @@ Export with Speaker IDs
 ### 3. Retry Logic
 - **3 attempts per chunk**: Exponential backoff (1s, 2s, 4s)
 - **Per-chunk isolation**: Failed chunks don't block subsequent processing
-- **Automatic fallback**: Sphinx → Google engine switching
+- **Retry logic**: Per-chunk retries with exponential backoff
 - **Rationale**: Maximize success rate for difficult audio segments
 
 ### 4. Threading Model

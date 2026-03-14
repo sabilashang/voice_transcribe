@@ -1,6 +1,6 @@
 """
 Troice — Voice Transcriber & Speaker Detection
-Premium dark-mode UI — Complete Redesign
+Light UI — Emerald / off-white theme
 """
 
 import tkinter as tk
@@ -23,37 +23,37 @@ from audio_processor import AudioProcessor
 from ai_text_enhancer import AITextEnhancer, EnhancerConfig
 
 # ─────────────────────────────────────────────────────────────────
-#  Theme — Dark Premium Palette
+#  Theme — Light Emerald / Off-White (Spotify-style soft green)
 # ─────────────────────────────────────────────────────────────────
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
+ctk.set_appearance_mode("light")
+ctk.set_default_color_theme("green")
 
-# Backgrounds
-BG        = "#0D1117"
-SURFACE   = "#161B22"
-SURFACE2  = "#21262D"
-SURFACE3  = "#2D333B"
+# Backgrounds — off-white and lightest emerald tints
+BG        = "#F7FBF8"   # off-white, hint of mint
+SURFACE   = "#EFF8F2"   # very light emerald
+SURFACE2  = "#E5F4EC"   # light emerald
+SURFACE3  = "#D9EFE2"   # soft emerald
 
-# Borders
-BORDER    = "#30363D"
-BORDER2   = "#444C56"
+# Borders — soft gray-green
+BORDER    = "#C8E6D4"
+BORDER2   = "#B5DCC8"
 
-# Accents
-ACCENT    = "#6E76FF"   # indigo-purple
-ACC_H     = "#818CF8"
-GREEN     = "#3FB950"
-GREEN_H   = "#4ADE80"
-RED       = "#F85149"
-RED_H     = "#FF6B63"
-ORANGE    = "#E3B341"
-BLUE      = "#58A6FF"
-PURPLE    = "#BC8CFF"
-TEAL      = "#39D0D8"
+# Accents — emerald green (Spotify-inspired, soft)
+ACCENT    = "#10B981"   # emerald-500
+ACC_H     = "#34D399"   # emerald-400 hover
+GREEN     = "#059669"   # emerald-600 success
+GREEN_H   = "#10B981"
+RED       = "#DC2626"   # soft red for record
+RED_H     = "#EF4444"
+ORANGE    = "#D97706"   # amber for pause/warning
+BLUE      = "#0284C7"   # sky blue
+PURPLE    = "#7C3AED"   # violet
+TEAL      = "#0D9488"
 
-# Text
-TEXT      = "#E6EDF3"
-TEXT2     = "#8B949E"
-TEXT3     = "#484F58"
+# Text — dark on light
+TEXT      = "#1C1917"   # warm dark
+TEXT2     = "#57534E"   # stone-600
+TEXT3     = "#78716C"   # stone-500
 WHITE     = "#FFFFFF"
 
 
@@ -80,7 +80,7 @@ def _label(parent, text, size=13, weight="normal", color=TEXT, **pack_kw):
 
 
 def _card(parent, title=None, title_color=TEXT2, padx=16, pady_inner=12):
-    """Rounded dark surface card with optional title."""
+    """Rounded light surface card with optional title."""
     outer = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=12,
                          border_width=1, border_color=BORDER)
     if title:
@@ -237,7 +237,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         footer.grid(row=6, column=0, sticky="sew", padx=20, pady=20)
         ctk.CTkLabel(footer, text="v2.0 · Premium Edition",
                      font=_f(10), text_color=TEXT3).pack(anchor="w")
-        ctk.CTkLabel(footer, text="Dark Theme",
+        ctk.CTkLabel(footer, text="Light theme",
                      font=_f(10), text_color=TEXT3).pack(anchor="w")
 
     # ── Navigation switch ─────────────────────────────────────────

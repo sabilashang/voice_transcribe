@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retry logic with exponential backoff
 - Speaker profile creation and management
 - Multi-language support (10+ languages)
-- Multiple recognition engines (Google, Sphinx, Azure, Bing)
+- Multiple recognition engines (Google, Azure, Bing)
 - Settings persistence across sessions
 - Progress tracking with animated indicators
 - Toast notifications for non-blocking feedback
@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical Features
 - Memory-efficient streaming for 100+ MB files
-- Automatic fallback from Sphinx to Google engine
+- Robust retry and error handling for recognition
 - Voice-preserving audio filtering (30Hz cutoff)
 - Thread-safe GUI updates
 - Proper state management for recording controls
