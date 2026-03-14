@@ -32,7 +32,7 @@ class VoiceTranscriber:
 
         Args:
             language: Language code for transcription (default: 'en-US')
-            engine: Recognition engine ('google', 'sphinx', 'azure', 'bing')
+            engine: Recognition engine ('google', 'azure', 'bing')
         """
         self.language = language
         self.engine = engine
@@ -466,8 +466,22 @@ class VoiceTranscriber:
         logger.info(f"Language changed to: {language}")
 
     def set_engine(self, engine: str) -> None:
-        """Change recognition engine"""
-        if engine not in ['google', 'sphinx', 'azure', 'bing']:
+        """Change recognition engine.
+
+        Note:
+            The legacy 'sphinx' engine has been removed from the UI because of
+            reliability issues. If it is requested (for example from an older
+            settings.json), we transparently fall back to 'google' to avoid
+            hard failures.
+        """
+        if engine == "sphinx":
+            logger.warning(
+                "Sphinx engine requested but no longer supported; "
+                "falling back to 'google'."
+            )
+            engine = "google"
+
+        if engine not in ["google", "azure", "bing"]:
             raise ValueError(f"Unsupported engine: {engine}")
 
         self.engine = engine

@@ -135,6 +135,9 @@ class VoiceTranscriberGUI(ctk.CTk):
         self._active_page         = "transcribe"
         self._toast_widget        = None
         self._toast_after_id      = None
+        self._live_center_active  = False
+        self._live_center_job     = None
+        self._live_center_value   = 0.0
 
         # StringVars
         self.file_path_var    = tk.StringVar()
@@ -421,7 +424,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         ctk.CTkLabel(eng_grp, text="Engine", font=_f(11), text_color=TEXT2).pack(anchor="w")
         self.engine_combo = ctk.CTkComboBox(
             eng_grp,
-            values=["google", "sphinx"],
+            values=["google"],
             variable=self.engine_var,
             width=128, height=36, corner_radius=8,
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
@@ -485,6 +488,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Set min width for right column
         right.configure(width=620)
         page.grid_columnconfigure(1, minsize=580)
+        self._transcribe_right_panel = right
 
         # Output header
         out_hdr = ctk.CTkFrame(right, fg_color="transparent")
@@ -540,6 +544,17 @@ class VoiceTranscriberGUI(ctk.CTk):
         )
         self.results_box.grid(row=1, column=0, sticky="nsew")
         self._set_output_placeholder()
+
+        # Center live recording progress (shown while live audio is being transcribed)
+        self._live_center_progress = ctk.CTkProgressBar(
+            right,
+            height=8,
+            width=260,
+            corner_radius=999,
+            fg_color=SURFACE2,
+            progress_color=ACCENT,
+        )
+        self._live_center_progress.set(0)
 
         # Stats bar
         stats = ctk.CTkFrame(right, fg_color="transparent")
@@ -768,7 +783,7 @@ class VoiceTranscriberGUI(ctk.CTk):
                      font=_f(12), text_color=TEXT2).pack(anchor="w")
         self.settings_engine_combo = ctk.CTkComboBox(
             le_inner,
-            values=["google", "sphinx"],
+            values=["google"],
             variable=self.engine_var,
             width=260, height=38, corner_radius=8,
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
@@ -782,7 +797,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Engine note
         ctk.CTkLabel(
             le_inner,
-            text="ⓘ  Google requires internet  ·  Sphinx works offline",
+            text="ⓘ  Google requires internet",
             font=_f(11), text_color=TEXT3, wraplength=280, justify="left"
         ).pack(anchor="w", pady=(8, 0))
 
@@ -882,10 +897,9 @@ class VoiceTranscriberGUI(ctk.CTk):
         preset_row.pack(fill="x")
 
         presets = [
-            ("🎤 Interview",   "en-US",  "google",  "16000"),
-            ("📞 Phone Call",  "en-US",  "google",  "8000"),
-            ("🌍 Multilingual","es-ES",  "google",  "16000"),
-            ("💻 Offline",     "en-US",  "sphinx",  "16000"),
+            ("🎤 Interview",    "en-US",  "google",  "16000"),
+            ("📞 Phone Call",   "en-US",  "google",  "8000"),
+            ("🌍 Multilingual", "es-ES",  "google",  "16000"),
         ]
         for label, lang, eng, sr_ in presets:
             ctk.CTkButton(
@@ -1052,6 +1066,49 @@ class VoiceTranscriberGUI(ctk.CTk):
             self._pulse_id = None
         self._rec_dot.configure(text_color=TEXT3)
 
+    def _start_live_center_progress(self):
+        """Start the center progress animation while live audio is being transcribed."""
+        if self._live_center_active:
+            return
+        self._live_center_active = True
+        # Place roughly at the center of the output panel
+        try:
+            self._live_center_progress.place(relx=0.5, rely=0.5, anchor="center")
+        except Exception:
+            # If placement fails for any reason, just skip without crashing
+            self._live_center_active = False
+            return
+
+        self._live_center_value = 0.0
+
+        def _tick():
+            if not self._live_center_active or not self.is_recording or self.is_paused:
+                # Hide when not actively recording
+                self._live_center_progress.place_forget()
+                return
+            # Simple looping animation 0 → 1 → 0
+            self._live_center_value += 0.03
+            if self._live_center_value >= 1.0:
+                self._live_center_value = 0.0
+            self._live_center_progress.set(self._live_center_value)
+            self._live_center_job = self.after(60, _tick)
+
+        _tick()
+
+    def _stop_live_center_progress(self):
+        """Stop and hide the center live progress animation."""
+        self._live_center_active = False
+        if self._live_center_job:
+            try:
+                self.after_cancel(self._live_center_job)
+            except Exception:
+                pass
+            self._live_center_job = None
+        try:
+            self._live_center_progress.place_forget()
+        except Exception:
+            pass
+
     # ─────────────────────────────────────────────────────────────
     #  Recording logic
     # ─────────────────────────────────────────────────────────────
@@ -1087,6 +1144,7 @@ class VoiceTranscriberGUI(ctk.CTk):
                 self.is_paused = False
                 self.after(0, self._start_timer)
                 self.after(0, self._start_pulse)
+                self.after(0, self._start_live_center_progress)
                 self.after(0, lambda: update_status(
                     "Recording — speak now", RED, RED))
 
@@ -1111,6 +1169,7 @@ class VoiceTranscriberGUI(ctk.CTk):
                         logger.error(f"Recording error: {e}")
                         time.sleep(1)
 
+                self.after(0, self._stop_live_center_progress)
                 self.after(0, lambda: self._show_toast("Recording complete", "green"))
 
             except Exception as e:
@@ -1126,12 +1185,14 @@ class VoiceTranscriberGUI(ctk.CTk):
             self._rec_status_lbl.configure(text="⏸ Paused", text_color=ORANGE)
             self._rec_dot.configure(text_color=ORANGE)
             self.update_status("Paused", ORANGE, ORANGE)
+            self._stop_live_center_progress()
             self._show_toast("Recording paused", "orange")
         elif self.is_paused:
             self.is_paused = False
             self.btn_pause.configure(text="⏸  Pause")
             self._rec_status_lbl.configure(text="● Recording", text_color=RED)
             self.after(0, self._start_pulse)
+            self.after(0, self._start_live_center_progress)
             self.update_status("Recording — speak now", RED, RED)
             self._show_toast("Recording resumed", "green")
 
@@ -1144,6 +1205,7 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         self._stop_timer()
         self._stop_pulse()
+        self._stop_live_center_progress()
 
         self.btn_record.configure(state="normal")
         self.btn_pause.configure(state="disabled", text="⏸  Pause")
@@ -1440,9 +1502,6 @@ class VoiceTranscriberGUI(ctk.CTk):
                         f"Name:         {profile['speaker_name']}\n"
                         f"Created at:   {profile['created_at']}\n"
                         f"Sample Rate:  {profile['sample_rate']}\n")
-
-                self.after(0, lambda: messagebox.showinfo("Profile Created",
-                    f"Speaker profile for '{profile['speaker_name']}' created!"))
                 self._set_progress(0)
                 self.update_status("Speaker profile created ✓", GREEN, GREEN)
                 self.after(0, lambda: self._show_toast("Profile created!", "green"))

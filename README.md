@@ -46,7 +46,7 @@
 - **Multiple export formats** - TXT, JSON, CSV, SRT subtitles, VTT
 - **Audio enhancement** - Automatic noise reduction and volume normalization
 - **Multi-language support** - English, Spanish, French, German, and more
-- **Multiple engines** - Google (high accuracy), Sphinx (offline), Azure, Bing
+- **Cloud engines** - Google (high accuracy), Azure, Bing
 
 #### 👥 **Speaker Detection** *(In Development)*
 - Advanced ML-based speaker identification
@@ -145,7 +145,7 @@ The application provides four main tabs:
 ## ⚡ Technical Highlights
 
 ### 🎤 Real-Time Speech Recognition
-- **Multiple engines**: Google Speech API (high accuracy), Sphinx (offline), Azure, Bing
+- **Multiple engines**: Google Speech API (high accuracy), Azure, Bing
 - **Multi-language**: English (US/UK), Spanish, French, German, Italian, Portuguese, Russian, Japanese, Korean, Chinese
 - **High accuracy**: >90% for clear speech with automatic retry logic
 - **Continuous processing**: Listens and transcribes continuously, not in fixed chunks
@@ -194,7 +194,6 @@ English (US/UK), Spanish, French, German, Italian, Portuguese, Russian, Japanese
 
 ### Recognition Engines
 - **Google** - High accuracy, requires internet
-- **Sphinx** - Offline processing
 - **Azure/Bing** - Enterprise options (API key required)
 
 ### Long Audio and Large Files
