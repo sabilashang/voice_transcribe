@@ -1,1317 +1,1248 @@
 """
-GUI Interface for Voice Transcriber with Speaker Detection
-Modern, user-friendly interface with soft milk palette and micro-interactions
+Troice — Voice Transcriber & Speaker Detection
+Premium dark-mode UI — Complete Redesign
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox
 import customtkinter as ctk
 import threading
 import os
-from datetime import datetime
 import json
-from typing import Optional, Callable
 import time
 import logging
 import speech_recognition as sr
+from datetime import datetime
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import our custom modules
 from voice_transcriber import VoiceTranscriber
 from speaker_detector import SpeakerDetector
 from audio_processor import AudioProcessor
 
-# Configure customtkinter with soft milk theme
-ctk.set_appearance_mode("light")
+# ─────────────────────────────────────────────────────────────────
+#  Theme — Dark Premium Palette
+# ─────────────────────────────────────────────────────────────────
+ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-# Neumorphism/Liquid Glass Color Palette
-COLORS = {
-    'bg_primary': '#F8FAFC',        # Soft white background
-    'bg_secondary': '#FFFFFF',       # Pure white cards
-    'bg_tertiary': '#F1F5F9',       # Light gray for subtle areas
-    'accent_primary': '#3B82F6',    # Soft blue
-    'accent_secondary': '#8B5CF6',   # Soft purple
-    'accent_success': '#10B981',     # Soft green
-    'accent_warning': '#F59E0B',     # Soft orange
-    'accent_error': '#EF4444',       # Soft red
-    'text_primary': '#1E293B',       # Dark slate
-    'text_secondary': '#64748B',     # Medium slate
-    'text_light': '#94A3B8',         # Light slate
-    'border_light': '#E2E8F0',       # Very light border
-    'shadow_light': '#CBD5E1',       # Light shadow
-    'glass_white': 'rgba(255, 255, 255, 0.8)',  # Glass effect
-    'glass_overlay': 'rgba(255, 255, 255, 0.1)',  # Overlay effect
-    # Legacy color mappings for backward compatibility
-    'primary': '#F8FAFC',
-    'secondary': '#FFFFFF',
-    'accent': '#3B82F6',
-    'text': '#1E293B',
-    'text_light': '#94A3B8',
-    'success': '#10B981',
-    'warning': '#F59E0B',
-    'error': '#EF4444',
-    'border': '#E2E8F0',
-    'hover': '#F1F5F9',
-    'active': '#E2E8F0'
-}
+# Backgrounds
+BG        = "#0D1117"
+SURFACE   = "#161B22"
+SURFACE2  = "#21262D"
+SURFACE3  = "#2D333B"
+
+# Borders
+BORDER    = "#30363D"
+BORDER2   = "#444C56"
+
+# Accents
+ACCENT    = "#6E76FF"   # indigo-purple
+ACC_H     = "#818CF8"
+GREEN     = "#3FB950"
+GREEN_H   = "#4ADE80"
+RED       = "#F85149"
+RED_H     = "#FF6B63"
+ORANGE    = "#E3B341"
+BLUE      = "#58A6FF"
+PURPLE    = "#BC8CFF"
+TEAL      = "#39D0D8"
+
+# Text
+TEXT      = "#E6EDF3"
+TEXT2     = "#8B949E"
+TEXT3     = "#484F58"
+WHITE     = "#FFFFFF"
 
 
-class VoiceTranscriberGUI:
-    """Main GUI application for Voice Transcriber with Neumorphism/Liquid Glass theme"""
+def _f(size, weight="normal", family="Segoe UI"):
+    return ctk.CTkFont(family=family, size=size, weight=weight)
 
+
+# ─────────────────────────────────────────────────────────────────
+#  Reusable Components
+# ─────────────────────────────────────────────────────────────────
+
+def _divider(parent, **grid_kw):
+    f = ctk.CTkFrame(parent, fg_color=BORDER, height=1, corner_radius=0)
+    if grid_kw:
+        f.grid(**grid_kw)
+    return f
+
+
+def _label(parent, text, size=13, weight="normal", color=TEXT, **pack_kw):
+    lbl = ctk.CTkLabel(parent, text=text, font=_f(size, weight), text_color=color)
+    if pack_kw:
+        lbl.pack(**pack_kw)
+    return lbl
+
+
+def _card(parent, title=None, title_color=TEXT2, padx=16, pady_inner=12):
+    """Rounded dark surface card with optional title."""
+    outer = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=12,
+                         border_width=1, border_color=BORDER)
+    if title:
+        hdr = ctk.CTkFrame(outer, fg_color="transparent")
+        hdr.pack(fill="x", padx=padx, pady=(pady_inner, 4))
+        ctk.CTkLabel(hdr, text=title, font=_f(12, "bold"), text_color=title_color).pack(side="left")
+        _sep = ctk.CTkFrame(outer, fg_color=BORDER, height=1, corner_radius=0)
+        _sep.pack(fill="x", padx=padx, pady=(0, pady_inner))
+    return outer
+
+
+def _icon_btn(parent, text, width, height=36, fg=SURFACE2, hover=SURFACE3,
+              tc=TEXT, font_size=12, weight="bold", command=None, state="normal", cr=8):
+    return ctk.CTkButton(
+        parent, text=text, width=width, height=height,
+        corner_radius=cr, fg_color=fg, hover_color=hover,
+        text_color=tc, font=_f(font_size, weight),
+        command=command, state=state
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Main Application
+# ─────────────────────────────────────────────────────────────────
+
+class VoiceTranscriberGUI(ctk.CTk):
+
+    # ── Init ──────────────────────────────────────────────────────
     def __init__(self):
-        """Initialize the GUI application"""
-        self.root = ctk.CTk()
-        self.root.title("🎤 Troice - Neumorphism UI")
-        self.root.geometry("1600x1000")
-        self.root.minsize(1200, 800)
+        super().__init__()
 
-        # Configure root window with neumorphism theme
-        self.root.configure(fg_color=COLORS['bg_primary'])
+        self.title("Troice — Voice Transcriber")
+        self.geometry("1420x880")
+        self.minsize(1100, 700)
+        self.configure(fg_color=BG)
 
-        # Initialize components
-        self.transcriber = VoiceTranscriber()
+        # Backend
+        self.transcriber      = VoiceTranscriber()
         self.speaker_detector = SpeakerDetector()
-        self.audio_processor = AudioProcessor()
+        self.audio_processor  = AudioProcessor()
 
-        # GUI state variables
-        self.is_recording = False
-        self.is_paused = False
-        self.continuous_recording_active = False
-        self.current_file = None
-        self.file_queue = []  # Optional queue for multiple files
-        self.transcription_results = []
-        self.speaker_results = None
-        self.animation_running = False
-        self.live_transcription_active = False
-        self.live_text_buffer = ""
+        # State
+        self.is_recording         = False
+        self.is_paused            = False
+        self.cont_rec_active      = False
+        self.current_file         = None
+        self.file_queue           = []
+        self._rec_start_time      = None
+        self._timer_id            = None
+        self._pulse_id            = None
+        self._pulse_state         = False
+        self._active_page         = "transcribe"
+        self._toast_widget        = None
+        self._toast_after_id      = None
 
-        # Typing animation variables
-        self.typing_index = 0
-        self.typing_text = ""
-
-        # Create custom styles
-        self.create_custom_styles()
-
-        # Create GUI elements
-        self.create_widgets()
-        self.setup_layout()
-
-        # Load speaker profiles if they exist
-        self.load_speaker_profiles()
-
-        # Start micro-interactions
-        self.setup_micro_interactions()
-
-    def create_custom_styles(self):
-        """Create custom styles for the neumorphism/liquid glass theme"""
-        # Configure customtkinter colors
-        ctk.set_default_color_theme("blue")
-
-        # Neumorphism button styles
-        self.neumorphism_button_style = {
-            'fg_color': COLORS['bg_secondary'],
-            'hover_color': COLORS['bg_tertiary'],
-            'text_color': COLORS['text_primary'],
-            'corner_radius': 20,
-            'border_width': 0,
-            'font': ctk.CTkFont(size=14, weight="normal")
-        }
-
-        self.primary_button_style = {
-            'fg_color': COLORS['accent_primary'],
-            'hover_color': '#2563EB',
-            'text_color': 'white',
-            'corner_radius': 25,
-            'border_width': 0,
-            'font': ctk.CTkFont(size=16, weight="bold")
-        }
-
-        self.success_button_style = {
-            'fg_color': COLORS['accent_success'],
-            'hover_color': '#059669',
-            'text_color': 'white',
-            'corner_radius': 25,
-            'border_width': 0,
-            'font': ctk.CTkFont(size=16, weight="bold")
-        }
-
-        self.error_button_style = {
-            'fg_color': COLORS['accent_error'],
-            'hover_color': '#DC2626',
-            'text_color': 'white',
-            'corner_radius': 25,
-            'border_width': 0,
-            'font': ctk.CTkFont(size=16, weight="bold")
-        }
-
-        self.warning_button_style = {
-            'fg_color': COLORS['accent_warning'],
-            'hover_color': '#D97706',
-            'text_color': 'white',
-            'corner_radius': 25,
-            'border_width': 0,
-            'font': ctk.CTkFont(size=16, weight="bold")
-        }
-
-        # Neumorphism frame styles
-        self.neumorphism_frame_style = {
-            'fg_color': COLORS['bg_secondary'],
-            'corner_radius': 25,
-            'border_width': 0
-        }
-
-        self.glass_frame_style = {
-            'fg_color': COLORS['bg_secondary'],
-            'corner_radius': 20,
-            'border_width': 1,
-            'border_color': COLORS['border_light']
-        }
-
-        # Input styles
-        self.input_style = {
-            'fg_color': COLORS['bg_secondary'],
-            'border_color': COLORS['border_light'],
-            'border_width': 2,
-            'corner_radius': 15,
-            'text_color': COLORS['text_primary'],
-            'placeholder_text_color': COLORS['text_light'],
-            'font': ctk.CTkFont(size=14)
-        }
-
-    def setup_micro_interactions(self):
-        """Setup micro-interactions and animations"""
-        # Pulse animation for recording button
-        self.pulse_animation_id = None
-        self.recording_pulse = False
-
-        # Hover effects
-        self.setup_hover_effects()
-
-        # Status animations
-        self.setup_status_animations()
-
-    def setup_hover_effects(self):
-        """Setup hover effects for interactive elements"""
-        pass  # Will be implemented in individual widgets
-
-    def setup_status_animations(self):
-        """Setup status animations"""
-        self.status_animation_running = False
-        self.status_dots = 0
-
-    def animate_recording_button(self):
-        """Animate the recording button with pulse effect"""
-        if self.is_recording and not self.recording_pulse:
-            self.recording_pulse = True
-            self.pulse_recording_button()
-
-    def pulse_recording_button(self):
-        """Create pulse animation for recording button"""
-        if self.is_recording:
-            # Change button color
-            current_color = self.record_button.cget('fg_color')
-            if current_color == COLORS['error']:
-                self.record_button.configure(fg_color='#FF6B6B')
-            else:
-                self.record_button.configure(fg_color=COLORS['error'])
-
-            # Schedule next pulse
-            self.root.after(500, self.pulse_recording_button)
-        else:
-            self.recording_pulse = False
-            self.record_button.configure(fg_color=COLORS['success'])
-
-    def animate_status_text(self, message):
-        """Animate status text with loading dots"""
-        if not self.status_animation_running:
-            self.status_animation_running = True
-            self.status_dots = 0
-            self.update_status_dots(message)
-
-    def update_status_dots(self, base_message):
-        """Update status dots animation"""
-        if self.status_animation_running:
-            dots = '.' * (self.status_dots % 4)
-            self.status_label.configure(text=f"{base_message}{dots}")
-            self.status_dots += 1
-            self.root.after(300, lambda: self.update_status_dots(base_message))
-
-    def stop_status_animation(self):
-        """Stop status animation"""
-        self.status_animation_running = False
-
-    def create_widgets(self):
-        """Create all GUI widgets with neumorphism/liquid glass theme"""
-        # Main container with neumorphism styling
-        self.main_frame = ctk.CTkFrame(
-            self.root,
-            fg_color=COLORS['bg_primary'],
-            corner_radius=0
-        )
-
-        # Header section with glass effect
-        self.header_frame = ctk.CTkFrame(
-            self.main_frame,
-            fg_color=COLORS['bg_secondary'],
-            corner_radius=30,
-            height=80
-        )
-
-        # Title with modern typography
-        self.title_label = ctk.CTkLabel(
-            self.header_frame,
-            text="🎤 Troice",
-            font=ctk.CTkFont(size=32, weight="bold"),
-            text_color=COLORS['text_primary']
-        )
-
-        # Subtitle
-        self.subtitle_label = ctk.CTkLabel(
-            self.header_frame,
-            text="Real-time speech recognition with intelligent speaker detection",
-            font=ctk.CTkFont(size=16),
-            text_color=COLORS['text_secondary']
-        )
-
-        # Main content area with tabs
-        self.notebook = ctk.CTkTabview(
-            self.main_frame,
-            fg_color=COLORS['bg_secondary'],
-            segmented_button_fg_color=COLORS['bg_tertiary'],
-            segmented_button_selected_color=COLORS['accent_primary'],
-            segmented_button_selected_hover_color='#2563EB',
-            text_color=COLORS['text_primary'],
-            corner_radius=25
-        )
-
-        # Create tabs with enhanced design
-        self.create_transcription_tab()
-        self.create_speaker_detection_tab()
-        self.create_speaker_management_tab()
-        self.create_settings_tab()
-
-        # Enhanced status bar with glass effect
-        self.status_frame = ctk.CTkFrame(
-            self.root,
-            fg_color=COLORS['bg_secondary'],
-            corner_radius=25,
-            height=80
-        )
-
-        # Status label with animation support
-        self.status_label = ctk.CTkLabel(
-            self.status_frame,
-            text="✨ Ready to transcribe",
-            font=ctk.CTkFont(size=16, weight="normal"),
-            text_color=COLORS['text_primary']
-        )
-
-        # Progress bar with neumorphism styling
-        self.progress_bar = ctk.CTkProgressBar(
-            self.status_frame,
-            fg_color=COLORS['bg_tertiary'],
-            progress_color=COLORS['accent_success'],
-            corner_radius=15,
-            height=25
-        )
-        self.progress_bar.set(0)
-
-        # Live transcription indicator
-        self.live_indicator = ctk.CTkLabel(
-            self.status_frame,
-            text="●",
-            font=ctk.CTkFont(size=20),
-            text_color=COLORS['accent_success']
-        )
-
-    def create_transcription_tab(self):
-        """Create transcription tab with soft milk theme"""
-        self.transcription_tab = self.notebook.add("🎤 Transcription")
-
-        # File selection section with card-like design
-        file_card = ctk.CTkFrame(
-            self.transcription_tab,
-            fg_color=COLORS['secondary'],
-            corner_radius=15,
-            border_width=1,
-            border_color=COLORS['border']
-        )
-        file_card.pack(fill="x", padx=20, pady=(20, 10))
-
-        # Section title with icon
-        section_title = ctk.CTkLabel(
-            file_card,
-            text="📁 Audio File Selection",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=COLORS['text']
-        )
-        section_title.pack(anchor="w", padx=20, pady=(15, 5))
-
-        # File input with modern styling
-        file_input_frame = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_input_frame.pack(fill="x", padx=20, pady=(0, 15))
-
-        self.file_path_var = tk.StringVar()
-        self.file_entry = ctk.CTkEntry(
-            file_input_frame,
-            textvariable=self.file_path_var,
-            placeholder_text="Choose an audio file or drag & drop here...",
-            height=45,
-            fg_color='white',
-            border_color=COLORS['border'],
-            border_width=1,
-            corner_radius=8,
-            text_color=COLORS['text'],
-            placeholder_text_color=COLORS['text_light'],
-            font=ctk.CTkFont(size=13)
-        )
-        self.file_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-
-        self.browse_button = ctk.CTkButton(
-            file_input_frame,
-            text="📂 Browse",
-            width=120,
-            height=45,
-            command=self.browse_file,
-            fg_color=COLORS['success'],
-            hover_color='#90EE90',
-            text_color=COLORS['text'],
-            corner_radius=15,
-            border_width=0,
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        self.browse_button.pack(side="right")
-
-        # Action buttons section
-        actions_card = ctk.CTkFrame(
-            self.transcription_tab,
-            fg_color=COLORS['secondary'],
-            corner_radius=15,
-            border_width=1,
-            border_color=COLORS['border']
-        )
-        actions_card.pack(fill="x", padx=20, pady=10)
-
-        actions_title = ctk.CTkLabel(
-            actions_card,
-            text="⚡ Quick Actions",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=COLORS['text']
-        )
-        actions_title.pack(anchor="w", padx=20, pady=(15, 10))
-
-        # Button grid layout - all buttons on same row
-        button_grid = ctk.CTkFrame(actions_card, fg_color="transparent")
-        button_grid.pack(fill="x", padx=20, pady=(0, 15))
-
-        # Single row for all buttons with consistent styling
-        button_row = ctk.CTkFrame(button_grid, fg_color="transparent")
-        button_row.pack(fill="x")
-
-        # Standardized button configuration for consistency
-        button_config = {
-            "height": 50,
-            "corner_radius": 15,
-            "border_width": 0,
-            "font": ctk.CTkFont(size=16, weight="bold"),
-            "text_color": COLORS['text']
-        }
-
-        self.transcribe_file_button = ctk.CTkButton(
-            button_row,
-            text="🎯 Transcribe File(s)",
-            command=self.transcribe_file,
-            fg_color=COLORS['success'],
-            hover_color='#90EE90',
-            **button_config
-        )
-        self.transcribe_file_button.pack(side="left", padx=(0, 10))
-
-        self.add_file_button = ctk.CTkButton(
-            button_row,
-            text="➕ Add Another File",
-            command=self.add_another_file,
-            fg_color=COLORS['accent_secondary'],
-            hover_color='#A855F7',
-            **button_config
-        )
-        self.add_file_button.pack(side="left", padx=(0, 10))
-
-        self.clear_button = ctk.CTkButton(
-            button_row,
-            text="🗑️ Clear Results",
-            command=self.clear_results,
-            fg_color=COLORS['warning'],
-            hover_color='#FFD700',
-            **button_config
-        )
-        self.clear_button.pack(side="left", padx=(0, 10))
-
-        self.export_results_button = ctk.CTkButton(
-            button_row,
-            text="💾 Export Results",
-            command=self.export_results,
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['hover'],
-            **button_config
-        )
-        self.export_results_button.pack(side="left")
-        self.export_results_button.configure(state="disabled")
-
-        # Results section with modern card design
-        results_card = ctk.CTkFrame(
-            self.transcription_tab,
-            fg_color=COLORS['secondary'],
-            corner_radius=15,
-            border_width=1,
-            border_color=COLORS['border']
-        )
-        results_card.pack(fill="both", expand=True, padx=20, pady=(10, 20))
-
-        results_title = ctk.CTkLabel(
-            results_card,
-            text="📝 Transcription Results",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=COLORS['text']
-        )
-        results_title.pack(anchor="w", padx=20, pady=(15, 10))
-
-        # Results text area with custom styling
-        self.results_text = scrolledtext.ScrolledText(
-            results_card,
-            height=15,
-            wrap=tk.WORD,
-            font=('Segoe UI', 12),
-            bg='white',
-            fg=COLORS['text'],
-            relief='flat',
-            borderwidth=0,
-            highlightthickness=0,
-            padx=15,
-            pady=15
-        )
-        self.results_text.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-
-        # Add placeholder text
-        self.results_text.insert(
-            tk.END, "✨ Your transcription results will appear here...\n\n")
-        self.results_text.insert(tk.END, "💡 Tips:\n")
-        self.results_text.insert(
-            tk.END, "• Use clear audio files for best results\n")
-        self.results_text.insert(
-            tk.END, "• Try different recognition engines if needed\n")
-        self.results_text.insert(
-            tk.END, "• Export results in your preferred format\n")
-
-    def create_speaker_detection_tab(self):
-        """Create speaker detection tab"""
-        self.speaker_tab = self.notebook.add("Speaker Detection")
-
-        # File selection for speaker detection
-        file_frame = ctk.CTkFrame(self.speaker_tab)
-        file_frame.pack(fill="x", padx=10, pady=5)
-
-        ctk.CTkLabel(file_frame, text="Audio File for Speaker Detection:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
-
-        file_select_frame = ctk.CTkFrame(file_frame)
-        file_select_frame.pack(fill="x", padx=5, pady=5)
-
+        # StringVars
+        self.file_path_var    = tk.StringVar()
+        self.language_var     = tk.StringVar(value="en-US")
+        self.engine_var       = tk.StringVar(value="google")
+        self.sample_rate_var  = tk.StringVar(value="16000")
         self.speaker_file_var = tk.StringVar()
-        self.speaker_file_entry = ctk.CTkEntry(
-            file_select_frame, textvariable=self.speaker_file_var, placeholder_text="Select audio file...")
-        self.speaker_file_entry.pack(
-            side="left", fill="x", expand=True, padx=(0, 5))
-
-        self.speaker_browse_button = ctk.CTkButton(
-            file_select_frame, text="Browse", command=self.browse_speaker_file)
-        self.speaker_browse_button.pack(side="right")
-
-        # Speaker detection controls
-        controls_frame = ctk.CTkFrame(self.speaker_tab)
-        controls_frame.pack(fill="x", padx=10, pady=5)
-
-        ctk.CTkLabel(controls_frame, text="Speaker Detection Controls:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
-
-        button_frame = ctk.CTkFrame(controls_frame)
-        button_frame.pack(fill="x", padx=5, pady=5)
-
-        self.detect_speakers_button = ctk.CTkButton(
-            button_frame, text="Detect Speakers", command=self.detect_speakers)
-        self.detect_speakers_button.pack(side="left", padx=(0, 5))
-
-        self.max_speakers_label = ctk.CTkLabel(
-            button_frame, text="Max Speakers:")
-        self.max_speakers_label.pack(side="left", padx=(10, 5))
-
-        self.max_speakers_var = tk.IntVar(value=5)
-        self.max_speakers_spinbox = ctk.CTkEntry(
-            button_frame, textvariable=self.max_speakers_var, width=50)
-        self.max_speakers_spinbox.pack(side="left", padx=(0, 5))
-
-        # Speaker results display
-        results_frame = ctk.CTkFrame(self.speaker_tab)
-        results_frame.pack(fill="both", expand=True, padx=10, pady=5)
-
-        ctk.CTkLabel(results_frame, text="Speaker Detection Results:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
-
-        self.speaker_results_text = scrolledtext.ScrolledText(
-            results_frame, height=15, wrap=tk.WORD)
-        self.speaker_results_text.pack(
-            fill="both", expand=True, padx=5, pady=5)
-
-    def create_speaker_management_tab(self):
-        """Create speaker management tab"""
-        self.management_tab = self.notebook.add("Speaker Management")
-
-        # Speaker profile creation
-        profile_frame = ctk.CTkFrame(self.management_tab)
-        profile_frame.pack(fill="x", padx=10, pady=5)
-
-        ctk.CTkLabel(profile_frame, text="Create Speaker Profile:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
-
-        profile_controls = ctk.CTkFrame(profile_frame)
-        profile_controls.pack(fill="x", padx=5, pady=5)
-
         self.profile_name_var = tk.StringVar()
-        self.profile_name_entry = ctk.CTkEntry(
-            profile_controls, textvariable=self.profile_name_var, placeholder_text="Speaker name...")
-        self.profile_name_entry.pack(
-            side="left", fill="x", expand=True, padx=(0, 5))
-
         self.profile_file_var = tk.StringVar()
-        self.profile_file_entry = ctk.CTkEntry(
-            profile_controls, textvariable=self.profile_file_var, placeholder_text="Audio file for profile...")
-        self.profile_file_entry.pack(
-            side="left", fill="x", expand=True, padx=(0, 5))
+        self.identify_file_var= tk.StringVar()
+        self.max_speakers_var = tk.StringVar(value="5")
 
-        self.profile_browse_button = ctk.CTkButton(
-            profile_controls, text="Browse", command=self.browse_profile_file)
-        self.profile_browse_button.pack(side="right", padx=(5, 0))
+        # Build
+        self._build_ui()
+        self._load_speaker_profiles()
+        self._load_settings_silent()
 
-        self.create_profile_button = ctk.CTkButton(
-            profile_controls, text="Create Profile", command=self.create_speaker_profile)
-        self.create_profile_button.pack(side="right", padx=(5, 0))
+    # ── UI Construction ───────────────────────────────────────────
 
-        # Speaker identification
-        identify_frame = ctk.CTkFrame(self.management_tab)
-        identify_frame.pack(fill="x", padx=10, pady=5)
+    def _build_ui(self):
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=0)
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(identify_frame, text="Identify Speaker:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
+        self._build_sidebar()
+        self._build_main()
+        self._build_statusbar()
 
-        identify_controls = ctk.CTkFrame(identify_frame)
-        identify_controls.pack(fill="x", padx=5, pady=5)
+    # ── Sidebar ───────────────────────────────────────────────────
 
-        self.identify_file_var = tk.StringVar()
-        self.identify_file_entry = ctk.CTkEntry(
-            identify_controls, textvariable=self.identify_file_var, placeholder_text="Audio file to identify...")
-        self.identify_file_entry.pack(
-            side="left", fill="x", expand=True, padx=(0, 5))
+    def _build_sidebar(self):
+        sb = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, width=226)
+        sb.grid(row=0, column=0, sticky="ns")
+        sb.grid_propagate(False)
+        sb.grid_rowconfigure(5, weight=1)
+        sb.grid_columnconfigure(0, weight=1)
+        self.sidebar = sb
 
-        self.identify_browse_button = ctk.CTkButton(
-            identify_controls, text="Browse", command=self.browse_identify_file)
-        self.identify_browse_button.pack(side="right", padx=(5, 0))
+        # ─ Brand ──────────────────────────────────────────────
+        brand = ctk.CTkFrame(sb, fg_color="transparent")
+        brand.grid(row=0, column=0, sticky="ew", padx=20, pady=(28, 22))
 
-        self.identify_button = ctk.CTkButton(
-            identify_controls, text="Identify Speaker", command=self.identify_speaker)
-        self.identify_button.pack(side="right", padx=(5, 0))
+        icon_lbl = ctk.CTkLabel(brand, text="🎤", font=_f(34))
+        icon_lbl.pack(side="left", padx=(0, 12))
 
-        # Results display
-        results_frame = ctk.CTkFrame(self.management_tab)
-        results_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        name_box = ctk.CTkFrame(brand, fg_color="transparent")
+        name_box.pack(side="left")
+        ctk.CTkLabel(name_box, text="Troice",
+                     font=_f(22, "bold"), text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(name_box, text="Voice Transcriber",
+                     font=_f(11), text_color=TEXT3).pack(anchor="w")
 
-        ctk.CTkLabel(results_frame, text="Speaker Management Results:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
+        # ─ Divider ─────────────────────────────────────────────
+        ctk.CTkFrame(sb, fg_color=BORDER, height=1, corner_radius=0).grid(
+            row=1, column=0, sticky="ew", padx=0)
 
-        self.management_results_text = scrolledtext.ScrolledText(
-            results_frame, height=15, wrap=tk.WORD)
-        self.management_results_text.pack(
-            fill="both", expand=True, padx=5, pady=5)
+        # ─ Nav label ──────────────────────────────────────────
+        ctk.CTkLabel(sb, text="MENU", font=_f(10, "bold"), text_color=TEXT3).grid(
+            row=2, column=0, sticky="w", padx=24, pady=(18, 6))
 
-    def create_settings_tab(self):
-        """Create settings tab"""
-        self.settings_tab = self.notebook.add("Settings")
+        # ─ Nav buttons ────────────────────────────────────────
+        nav_frame = ctk.CTkFrame(sb, fg_color="transparent")
+        nav_frame.grid(row=3, column=0, sticky="ew", padx=12)
 
-        # Language settings
-        language_frame = ctk.CTkFrame(self.settings_tab)
-        language_frame.pack(fill="x", padx=10, pady=5)
+        self._nav_buttons = {}
+        nav_items = [
+            ("🎤", "Transcribe", "transcribe"),
+            ("👥", "Speakers",   "speakers"),
+            ("⚙️", "Settings",   "settings"),
+        ]
+        for icon, label, key in nav_items:
+            btn = ctk.CTkButton(
+                nav_frame,
+                text=f"{icon}  {label}",
+                anchor="w",
+                height=46,
+                corner_radius=10,
+                fg_color=ACCENT if key == "transcribe" else "transparent",
+                hover_color=SURFACE2,
+                text_color=TEXT,
+                font=_f(14, "bold"),
+                command=lambda k=key: self._nav_switch(k)
+            )
+            btn.pack(fill="x", pady=3)
+            self._nav_buttons[key] = btn
 
-        ctk.CTkLabel(language_frame, text="Language Settings:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
+        # ─ Divider ─────────────────────────────────────────────
+        ctk.CTkFrame(sb, fg_color=BORDER, height=1, corner_radius=0).grid(
+            row=4, column=0, sticky="ew", padx=0, pady=(12, 0))
 
-        language_controls = ctk.CTkFrame(language_frame)
-        language_controls.pack(fill="x", padx=5, pady=5)
+        # ─ Footer ─────────────────────────────────────────────
+        footer = ctk.CTkFrame(sb, fg_color="transparent")
+        footer.grid(row=6, column=0, sticky="sew", padx=20, pady=20)
+        ctk.CTkLabel(footer, text="v2.0 · Premium Edition",
+                     font=_f(10), text_color=TEXT3).pack(anchor="w")
+        ctk.CTkLabel(footer, text="Dark Theme",
+                     font=_f(10), text_color=TEXT3).pack(anchor="w")
 
-        ctk.CTkLabel(language_controls, text="Language:").pack(
-            side="left", padx=(0, 5))
+    # ── Navigation switch ─────────────────────────────────────────
 
-        self.language_var = tk.StringVar(value="en-US")
-        self.language_combo = ctk.CTkComboBox(
-            language_controls,
+    def _nav_switch(self, key: str):
+        self._active_page = key
+        for k, btn in self._nav_buttons.items():
+            btn.configure(fg_color=ACCENT if k == key else "transparent")
+        for k, page in self.pages.items():
+            if k == key:
+                page.grid()
+            else:
+                page.grid_remove()
+
+    # ── Main container ────────────────────────────────────────────
+
+    def _build_main(self):
+        self.main_area = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        self.main_area.grid(row=0, column=1, sticky="nsew")
+        self.main_area.grid_rowconfigure(0, weight=1)
+        self.main_area.grid_columnconfigure(0, weight=1)
+
+        self.pages = {}
+        self._build_transcribe_page()
+        self._build_speakers_page()
+        self._build_settings_page()
+        self._nav_switch("transcribe")
+
+    # ── Status bar ────────────────────────────────────────────────
+
+    def _build_statusbar(self):
+        bar = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, height=46)
+        bar.grid(row=1, column=0, columnspan=2, sticky="ew")
+        bar.grid_propagate(False)
+        bar.grid_columnconfigure(1, weight=1)
+        self.statusbar = bar
+
+        # Dot
+        self._status_dot = ctk.CTkLabel(bar, text="●", font=_f(12), text_color=GREEN)
+        self._status_dot.grid(row=0, column=0, padx=(16, 6), pady=13)
+
+        # Message
+        self._status_text = ctk.CTkLabel(bar, text="Ready to transcribe",
+                                          font=_f(12), text_color=TEXT2, anchor="w")
+        self._status_text.grid(row=0, column=1, sticky="w")
+
+        # Progress
+        self._progress_bar = ctk.CTkProgressBar(bar, height=4, width=180,
+                                                  corner_radius=2,
+                                                  fg_color=SURFACE2,
+                                                  progress_color=ACCENT)
+        self._progress_bar.set(0)
+        self._progress_bar.grid(row=0, column=2, padx=16, pady=14)
+        self._progress_bar.grid_remove()
+
+        # Recording timer (right side)
+        self._rec_timer_var = tk.StringVar(value="")
+        self._rec_timer_disp = ctk.CTkLabel(bar, textvariable=self._rec_timer_var,
+                                             font=_f(13, family="Consolas"),
+                                             text_color=RED)
+        self._rec_timer_disp.grid(row=0, column=3, padx=(0, 16), pady=13)
+
+    # ─────────────────────────────────────────────────────────────
+    #  PAGE: Transcribe
+    # ─────────────────────────────────────────────────────────────
+
+    def _build_transcribe_page(self):
+        page = ctk.CTkFrame(self.main_area, fg_color=BG, corner_radius=0)
+        page.grid(row=0, column=0, sticky="nsew")
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_columnconfigure(1, weight=0)
+        page.grid_rowconfigure(1, weight=1)
+        self.pages["transcribe"] = page
+
+        # ── Top header bar ────────────────────────────────────
+        hdr = ctk.CTkFrame(page, fg_color="transparent")
+        hdr.grid(row=0, column=0, columnspan=2, sticky="ew", padx=28, pady=(24, 16))
+        hdr.grid_columnconfigure(0, weight=0)
+        hdr.grid_columnconfigure(1, weight=1)
+
+        # Left: Page title
+        title_box = ctk.CTkFrame(hdr, fg_color="transparent")
+        title_box.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(title_box, text="Transcribe",
+                     font=_f(24, "bold"), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(title_box, text="  / Convert audio to text",
+                     font=_f(13), text_color=TEXT3).pack(side="left", pady=(4, 0))
+
+        # Right: Recording controls
+        rec_box = ctk.CTkFrame(hdr, fg_color=SURFACE, corner_radius=10,
+                               border_width=1, border_color=BORDER)
+        rec_box.grid(row=0, column=1, sticky="e")
+
+        rec_inner = ctk.CTkFrame(rec_box, fg_color="transparent")
+        rec_inner.pack(padx=14, pady=10)
+
+        # Recording dot + status
+        self._rec_dot = ctk.CTkLabel(rec_inner, text="●", font=_f(13), text_color=TEXT3)
+        self._rec_dot.pack(side="left", padx=(0, 6))
+        self._rec_status_lbl = ctk.CTkLabel(rec_inner, text="Microphone ready",
+                                             font=_f(12), text_color=TEXT2)
+        self._rec_status_lbl.pack(side="left", padx=(0, 18))
+
+        # Record button
+        self.btn_record = ctk.CTkButton(
+            rec_inner, text="⏺  Record", width=108, height=34, corner_radius=8,
+            fg_color=RED, hover_color=RED_H, text_color=WHITE,
+            font=_f(13, "bold"), command=self.start_recording
+        )
+        self.btn_record.pack(side="left", padx=(0, 8))
+
+        # Pause button
+        self.btn_pause = _icon_btn(
+            rec_inner, "⏸  Pause", 96, height=34,
+            command=self.pause_recording, state="disabled"
+        )
+        self.btn_pause.pack(side="left", padx=(0, 8))
+
+        # Stop button
+        self.btn_stop = _icon_btn(
+            rec_inner, "⏹  Stop", 88, height=34,
+            command=self.stop_recording, state="disabled"
+        )
+        self.btn_stop.pack(side="left")
+
+        # ── Two-column body ───────────────────────────────────
+        # Left: controls
+        left = ctk.CTkScrollableFrame(page, fg_color=BG, corner_radius=0,
+                                       scrollbar_button_color=SURFACE2,
+                                       scrollbar_button_hover_color=SURFACE3)
+        left.grid(row=1, column=0, sticky="nsew", padx=(28, 12), pady=(0, 20))
+        left.grid_columnconfigure(0, weight=1)
+
+        # ─ File Input Card ──────────────────────────────────
+        file_card = _card(left, "📁  AUDIO FILE", title_color=TEXT2)
+        file_card.pack(fill="x", pady=(0, 14))
+
+        # File entry row
+        file_row = ctk.CTkFrame(file_card, fg_color="transparent")
+        file_row.pack(fill="x", padx=16, pady=(4, 12))
+
+        self.file_entry = ctk.CTkEntry(
+            file_row, textvariable=self.file_path_var,
+            placeholder_text="Choose an audio file…",
+            height=40, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, placeholder_text_color=TEXT3,
+            font=_f(13)
+        )
+        self.file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        self.btn_browse = ctk.CTkButton(
+            file_row, text="Browse", width=88, height=40, corner_radius=8,
+            fg_color=SURFACE2, hover_color=SURFACE3, text_color=TEXT,
+            font=_f(13, "bold"), command=self.browse_file
+        )
+        self.btn_browse.pack(side="right")
+
+        # Options row
+        opt_row = ctk.CTkFrame(file_card, fg_color="transparent")
+        opt_row.pack(fill="x", padx=16, pady=(0, 12))
+
+        # Language
+        lang_grp = ctk.CTkFrame(opt_row, fg_color="transparent")
+        lang_grp.pack(side="left", padx=(0, 18))
+        ctk.CTkLabel(lang_grp, text="Language", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        self.lang_combo = ctk.CTkComboBox(
+            lang_grp,
             values=["en-US", "en-GB", "es-ES", "fr-FR", "de-DE",
                     "it-IT", "pt-BR", "ru-RU", "ja-JP", "ko-KR", "zh-CN"],
             variable=self.language_var,
-            command=self.update_language
+            width=148, height=36, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            button_color=SURFACE3, button_hover_color=BORDER2,
+            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
+            text_color=TEXT, dropdown_text_color=TEXT,
+            font=_f(13), command=self.update_language
         )
-        self.language_combo.pack(side="left", padx=(0, 10))
+        self.lang_combo.pack()
 
-        # Engine settings
-        engine_frame = ctk.CTkFrame(self.settings_tab)
-        engine_frame.pack(fill="x", padx=10, pady=5)
-
-        ctk.CTkLabel(engine_frame, text="Recognition Engine:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
-
-        engine_controls = ctk.CTkFrame(engine_frame)
-        engine_controls.pack(fill="x", padx=5, pady=5)
-
-        ctk.CTkLabel(engine_controls, text="Engine:").pack(
-            side="left", padx=(0, 5))
-
-        self.engine_var = tk.StringVar(value="google")
+        # Engine
+        eng_grp = ctk.CTkFrame(opt_row, fg_color="transparent")
+        eng_grp.pack(side="left", padx=(0, 18))
+        ctk.CTkLabel(eng_grp, text="Engine", font=_f(11), text_color=TEXT2).pack(anchor="w")
         self.engine_combo = ctk.CTkComboBox(
-            engine_controls,
+            eng_grp,
             values=["google", "sphinx"],
             variable=self.engine_var,
-            command=self.update_engine
+            width=128, height=36, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            button_color=SURFACE3, button_hover_color=BORDER2,
+            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
+            text_color=TEXT, dropdown_text_color=TEXT,
+            font=_f(13), command=self.update_engine
         )
-        self.engine_combo.pack(side="left", padx=(0, 10))
+        self.engine_combo.pack()
 
-        # Audio settings
-        audio_frame = ctk.CTkFrame(self.settings_tab)
-        audio_frame.pack(fill="x", padx=10, pady=5)
+        # Action buttons
+        act_row = ctk.CTkFrame(file_card, fg_color="transparent")
+        act_row.pack(fill="x", padx=16, pady=(0, 16))
 
-        ctk.CTkLabel(audio_frame, text="Audio Settings:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
+        self.btn_transcribe = ctk.CTkButton(
+            act_row, text="⚡  Transcribe File",
+            height=42, corner_radius=8,
+            fg_color=ACCENT, hover_color=ACC_H,
+            text_color=WHITE, font=_f(14, "bold"),
+            command=self.transcribe_file
+        )
+        self.btn_transcribe.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        audio_controls = ctk.CTkFrame(audio_frame)
-        audio_controls.pack(fill="x", padx=5, pady=5)
+        self.btn_add_file = _icon_btn(
+            act_row, "➕ Queue", 90, height=42,
+            command=self.add_another_file
+        )
+        self.btn_add_file.pack(side="left")
 
-        ctk.CTkLabel(audio_controls, text="Sample Rate:").pack(
-            side="left", padx=(0, 5))
+        # File info label
+        self._file_info_lbl = ctk.CTkLabel(
+            file_card, text="", font=_f(11), text_color=TEXT2
+        )
+        self._file_info_lbl.pack(anchor="w", padx=16, pady=(0, 10))
 
-        self.sample_rate_var = tk.IntVar(value=16000)
-        self.sample_rate_combo = ctk.CTkComboBox(
-            audio_controls,
+        # ─ Quick Tips Card ──────────────────────────────────
+        tips_card = _card(left, "💡  TIPS", title_color=TEXT3)
+        tips_card.pack(fill="x", pady=(0, 14))
+
+        tips = [
+            ("🎤", "Use clear, noise-free audio for best accuracy"),
+            ("📁", "Supports WAV, MP3, M4A, FLAC, OGG, AAC"),
+            ("🌐", "Google engine requires internet connection"),
+            ("⚡", "Large files are auto-chunked for reliability"),
+        ]
+        tips_inner = ctk.CTkFrame(tips_card, fg_color="transparent")
+        tips_inner.pack(fill="x", padx=16, pady=(0, 14))
+        for icon, tip in tips:
+            row = ctk.CTkFrame(tips_inner, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=icon, font=_f(13), width=24).pack(side="left")
+            ctk.CTkLabel(row, text=tip, font=_f(12), text_color=TEXT2,
+                         wraplength=300, justify="left").pack(side="left", padx=(6, 0))
+
+        # ── Right column: Output ──────────────────────────────
+        right = ctk.CTkFrame(page, fg_color="transparent")
+        right.grid(row=1, column=1, sticky="nsew", padx=(0, 28), pady=(0, 20))
+        right.grid_rowconfigure(1, weight=1)
+        right.grid_columnconfigure(0, weight=1)
+
+        # Set min width for right column
+        right.configure(width=620)
+        page.grid_columnconfigure(1, minsize=580)
+
+        # Output header
+        out_hdr = ctk.CTkFrame(right, fg_color="transparent")
+        out_hdr.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        ctk.CTkLabel(out_hdr, text="Output", font=_f(15, "bold"),
+                     text_color=TEXT).pack(side="left")
+
+        out_btn_frame = ctk.CTkFrame(out_hdr, fg_color="transparent")
+        out_btn_frame.pack(side="right")
+
+        self.btn_copy = _icon_btn(
+            out_btn_frame, "⎘ Copy", 70, height=30, font_size=11,
+            command=self._copy_results
+        )
+        self.btn_copy.pack(side="left", padx=(0, 6))
+
+        self.btn_clear_out = _icon_btn(
+            out_btn_frame, "✕ Clear", 66, height=30, font_size=11,
+            command=self.clear_results
+        )
+        self.btn_clear_out.pack(side="left", padx=(0, 6))
+
+        self.btn_export = ctk.CTkButton(
+            out_btn_frame, text="↓ Export", width=74, height=30,
+            corner_radius=6, fg_color=ACCENT, hover_color=ACC_H,
+            text_color=WHITE, font=_f(11, "bold"), state="disabled",
+            command=self.export_results
+        )
+        self.btn_export.pack(side="left")
+
+        # Output textbox
+        self.results_box = ctk.CTkTextbox(
+            right,
+            font=_f(13, family="Segoe UI"),
+            fg_color=SURFACE,
+            border_color=BORDER, border_width=1,
+            corner_radius=12,
+            text_color=TEXT,
+            wrap="word",
+            scrollbar_button_color=SURFACE2,
+            scrollbar_button_hover_color=SURFACE3,
+            activate_scrollbars=True
+        )
+        self.results_box.grid(row=1, column=0, sticky="nsew")
+        self._set_output_placeholder()
+
+        # Stats bar
+        stats = ctk.CTkFrame(right, fg_color="transparent")
+        stats.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+
+        self._words_lbl = ctk.CTkLabel(stats, text="0 words",
+                                        font=_f(11), text_color=TEXT3)
+        self._words_lbl.pack(side="left")
+        ctk.CTkLabel(stats, text=" · ", font=_f(11), text_color=TEXT3).pack(side="left")
+        self._chars_lbl = ctk.CTkLabel(stats, text="0 characters",
+                                        font=_f(11), text_color=TEXT3)
+        self._chars_lbl.pack(side="left")
+
+    # ─────────────────────────────────────────────────────────────
+    #  PAGE: Speakers
+    # ─────────────────────────────────────────────────────────────
+
+    def _build_speakers_page(self):
+        page = ctk.CTkScrollableFrame(self.main_area, fg_color=BG, corner_radius=0,
+                                       scrollbar_button_color=SURFACE2)
+        page.grid(row=0, column=0, sticky="nsew")
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_remove()
+        self.pages["speakers"] = page
+
+        # Page header
+        pg_hdr = ctk.CTkFrame(page, fg_color="transparent")
+        pg_hdr.grid(row=0, column=0, sticky="ew", padx=28, pady=(24, 16))
+        ctk.CTkLabel(pg_hdr, text="Speakers", font=_f(24, "bold"), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(pg_hdr, text="  / Detect & manage speaker profiles",
+                     font=_f(13), text_color=TEXT3).pack(side="left", pady=(4, 0))
+
+        # Body grid
+        body = ctk.CTkFrame(page, fg_color="transparent")
+        body.grid(row=1, column=0, sticky="ew", padx=28)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
+
+        # ─ Detect Speakers ──────────────────────────────────
+        detect_card = _card(body, "🔍  DETECT SPEAKERS", title_color=BLUE)
+        detect_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 14))
+
+        dc_inner = ctk.CTkFrame(detect_card, fg_color="transparent")
+        dc_inner.pack(fill="x", padx=16, pady=(0, 16))
+
+        ctk.CTkLabel(dc_inner, text="Audio file", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        sp_file_row = ctk.CTkFrame(dc_inner, fg_color="transparent")
+        sp_file_row.pack(fill="x", pady=(4, 10))
+
+        self.speaker_file_entry = ctk.CTkEntry(
+            sp_file_row, textvariable=self.speaker_file_var,
+            placeholder_text="Select audio file…",
+            height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13)
+        )
+        self.speaker_file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        _icon_btn(sp_file_row, "Browse", 80, height=38,
+                  command=self.browse_speaker_file).pack(side="right")
+
+        # Max speakers
+        ms_row = ctk.CTkFrame(dc_inner, fg_color="transparent")
+        ms_row.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(ms_row, text="Max speakers:", font=_f(12), text_color=TEXT2).pack(side="left")
+        self.max_speakers_entry = ctk.CTkEntry(
+            ms_row, textvariable=self.max_speakers_var,
+            width=60, height=34, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, font=_f(13)
+        )
+        self.max_speakers_entry.pack(side="left", padx=(10, 0))
+
+        ctk.CTkButton(
+            dc_inner, text="🔍  Detect Speakers",
+            height=40, corner_radius=8,
+            fg_color=BLUE, hover_color="#4A94FF",
+            text_color=WHITE, font=_f(13, "bold"),
+            command=self.detect_speakers
+        ).pack(fill="x", pady=(4, 0))
+
+        # Speaker detection output
+        ctk.CTkLabel(dc_inner, text="Results", font=_f(11), text_color=TEXT2).pack(
+            anchor="w", pady=(14, 4))
+        self.speaker_results_box = ctk.CTkTextbox(
+            detect_card, height=200, font=_f(12, family="Consolas"),
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            corner_radius=8, text_color=TEXT, wrap="word",
+            scrollbar_button_color=SURFACE2
+        )
+        self.speaker_results_box.pack(fill="x", padx=16, pady=(0, 16))
+        self.speaker_results_box.insert("end", "Speaker detection results will appear here…")
+        self.speaker_results_box.configure(state="disabled")
+
+        # ─ Create Profile ───────────────────────────────────
+        profile_card = _card(body, "👤  CREATE SPEAKER PROFILE", title_color=GREEN)
+        profile_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=(0, 14))
+
+        pc_inner = ctk.CTkFrame(profile_card, fg_color="transparent")
+        pc_inner.pack(fill="x", padx=16, pady=(0, 16))
+
+        ctk.CTkLabel(pc_inner, text="Speaker name", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        self.profile_name_entry = ctk.CTkEntry(
+            pc_inner, textvariable=self.profile_name_var,
+            placeholder_text="e.g. John Doe",
+            height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13)
+        )
+        self.profile_name_entry.pack(fill="x", pady=(4, 10))
+
+        ctk.CTkLabel(pc_inner, text="Audio sample", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        pf_row = ctk.CTkFrame(pc_inner, fg_color="transparent")
+        pf_row.pack(fill="x", pady=(4, 10))
+        self.profile_file_entry = ctk.CTkEntry(
+            pf_row, textvariable=self.profile_file_var,
+            placeholder_text="Select audio file…",
+            height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13)
+        )
+        self.profile_file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        _icon_btn(pf_row, "Browse", 80, height=38,
+                  command=self.browse_profile_file).pack(side="right")
+
+        ctk.CTkButton(
+            pc_inner, text="✚  Create Profile",
+            height=40, corner_radius=8,
+            fg_color=GREEN, hover_color=GREEN_H,
+            text_color=WHITE, font=_f(13, "bold"),
+            command=self.create_speaker_profile
+        ).pack(fill="x", pady=(4, 0))
+
+        # ─ Identify Speaker ─────────────────────────────────
+        identify_card = _card(body, "🎯  IDENTIFY SPEAKER", title_color=PURPLE)
+        identify_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+
+        id_inner = ctk.CTkFrame(identify_card, fg_color="transparent")
+        id_inner.pack(fill="x", padx=16, pady=(0, 16))
+
+        ctk.CTkLabel(id_inner, text="Audio file to identify", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        id_file_row = ctk.CTkFrame(id_inner, fg_color="transparent")
+        id_file_row.pack(fill="x", pady=(4, 10))
+        self.identify_file_entry = ctk.CTkEntry(
+            id_file_row, textvariable=self.identify_file_var,
+            placeholder_text="Select audio file…",
+            height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13)
+        )
+        self.identify_file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        _icon_btn(id_file_row, "Browse", 80, height=38,
+                  command=self.browse_identify_file).pack(side="right")
+
+        id_btn_row = ctk.CTkFrame(id_inner, fg_color="transparent")
+        id_btn_row.pack(fill="x")
+        ctk.CTkButton(
+            id_btn_row, text="🎯  Identify Speaker",
+            height=40, width=200, corner_radius=8,
+            fg_color=PURPLE, hover_color="#C9A8FF",
+            text_color=WHITE, font=_f(13, "bold"),
+            command=self.identify_speaker
+        ).pack(side="left")
+
+        ctk.CTkLabel(id_inner, text="Result", font=_f(11), text_color=TEXT2).pack(
+            anchor="w", pady=(14, 4))
+        self.management_results_box = ctk.CTkTextbox(
+            identify_card, height=120, font=_f(12, family="Consolas"),
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            corner_radius=8, text_color=TEXT, wrap="word",
+            scrollbar_button_color=SURFACE2
+        )
+        self.management_results_box.pack(fill="x", padx=16, pady=(0, 16))
+        self.management_results_box.insert("end", "Speaker identification results will appear here…")
+        self.management_results_box.configure(state="disabled")
+
+    # ─────────────────────────────────────────────────────────────
+    #  PAGE: Settings
+    # ─────────────────────────────────────────────────────────────
+
+    def _build_settings_page(self):
+        page = ctk.CTkScrollableFrame(self.main_area, fg_color=BG, corner_radius=0,
+                                       scrollbar_button_color=SURFACE2)
+        page.grid(row=0, column=0, sticky="nsew")
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_remove()
+        self.pages["settings"] = page
+
+        # Page header
+        pg_hdr = ctk.CTkFrame(page, fg_color="transparent")
+        pg_hdr.grid(row=0, column=0, sticky="ew", padx=28, pady=(24, 16))
+        ctk.CTkLabel(pg_hdr, text="Settings", font=_f(24, "bold"), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(pg_hdr, text="  / Configure your preferences",
+                     font=_f(13), text_color=TEXT3).pack(side="left", pady=(4, 0))
+
+        body = ctk.CTkFrame(page, fg_color="transparent")
+        body.grid(row=1, column=0, sticky="ew", padx=28)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
+
+        # ─ Language & Engine ────────────────────────────────
+        le_card = _card(body, "🌐  LANGUAGE & ENGINE", title_color=BLUE)
+        le_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 14))
+
+        le_inner = ctk.CTkFrame(le_card, fg_color="transparent")
+        le_inner.pack(fill="x", padx=16, pady=(0, 16))
+
+        # Language row
+        ctk.CTkLabel(le_inner, text="Recognition language",
+                     font=_f(12), text_color=TEXT2).pack(anchor="w")
+        self.settings_lang_combo = ctk.CTkComboBox(
+            le_inner,
+            values=["en-US", "en-GB", "es-ES", "fr-FR", "de-DE",
+                    "it-IT", "pt-BR", "ru-RU", "ja-JP", "ko-KR", "zh-CN"],
+            variable=self.language_var,
+            width=260, height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            button_color=SURFACE3, button_hover_color=BORDER2,
+            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
+            text_color=TEXT, dropdown_text_color=TEXT,
+            font=_f(13), command=self.update_language
+        )
+        self.settings_lang_combo.pack(anchor="w", pady=(4, 14))
+
+        # Engine row
+        ctk.CTkLabel(le_inner, text="Recognition engine",
+                     font=_f(12), text_color=TEXT2).pack(anchor="w")
+        self.settings_engine_combo = ctk.CTkComboBox(
+            le_inner,
+            values=["google", "sphinx"],
+            variable=self.engine_var,
+            width=260, height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            button_color=SURFACE3, button_hover_color=BORDER2,
+            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
+            text_color=TEXT, dropdown_text_color=TEXT,
+            font=_f(13), command=self.update_engine
+        )
+        self.settings_engine_combo.pack(anchor="w", pady=(4, 0))
+
+        # Engine note
+        ctk.CTkLabel(
+            le_inner,
+            text="ⓘ  Google requires internet  ·  Sphinx works offline",
+            font=_f(11), text_color=TEXT3, wraplength=280, justify="left"
+        ).pack(anchor="w", pady=(8, 0))
+
+        # ─ Audio Settings ───────────────────────────────────
+        audio_card = _card(body, "🎛️  AUDIO SETTINGS", title_color=ORANGE)
+        audio_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=(0, 14))
+
+        ac_inner = ctk.CTkFrame(audio_card, fg_color="transparent")
+        ac_inner.pack(fill="x", padx=16, pady=(0, 16))
+
+        ctk.CTkLabel(ac_inner, text="Sample rate (Hz)",
+                     font=_f(12), text_color=TEXT2).pack(anchor="w")
+        self.settings_sr_combo = ctk.CTkComboBox(
+            ac_inner,
             values=["8000", "16000", "22050", "44100", "48000"],
             variable=self.sample_rate_var,
-            command=self.update_sample_rate
+            width=180, height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            button_color=SURFACE3, button_hover_color=BORDER2,
+            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
+            text_color=TEXT, dropdown_text_color=TEXT,
+            font=_f(13), command=self.update_sample_rate
         )
-        self.sample_rate_combo.pack(side="left", padx=(0, 10))
+        self.settings_sr_combo.pack(anchor="w", pady=(4, 0))
 
-        # Save/Load settings
-        save_frame = ctk.CTkFrame(self.settings_tab)
-        save_frame.pack(fill="x", padx=10, pady=5)
+        ctk.CTkLabel(
+            ac_inner,
+            text="ⓘ  16000 Hz recommended for speech recognition",
+            font=_f(11), text_color=TEXT3
+        ).pack(anchor="w", pady=(8, 0))
 
-        ctk.CTkLabel(save_frame, text="Settings Management:",
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5)
+        # ─ Presets section ──────────────────────────────────
+        preset_card = _card(body, "⚡  QUICK PRESETS", title_color=ACCENT)
+        preset_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 14))
 
-        save_controls = ctk.CTkFrame(save_frame)
-        save_controls.pack(fill="x", padx=5, pady=5)
+        presets_inner = ctk.CTkFrame(preset_card, fg_color="transparent")
+        presets_inner.pack(fill="x", padx=16, pady=(0, 16))
 
-        self.save_settings_button = ctk.CTkButton(
-            save_controls, text="Save Settings", command=self.save_settings)
-        self.save_settings_button.pack(side="left", padx=(0, 5))
-
-        self.load_settings_button = ctk.CTkButton(
-            save_controls, text="Load Settings", command=self.load_settings)
-        self.load_settings_button.pack(side="left")
-
-    def setup_layout(self):
-        """Setup the main layout with neumorphism theme and top controls"""
-        # Main frame fills the entire window
-        self.main_frame.pack(fill="both", expand=True, padx=0, pady=0)
-
-        # Header section with recording controls
-        self.header_frame.pack(fill="x", padx=20, pady=(15, 8))
-        self.title_label.pack(pady=(10, 3))
-        self.subtitle_label.pack(pady=(0, 5))
-
-        # Recording controls at the top
-        self.create_top_controls()
-
-        # Main content area
-        self.notebook.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-
-        # Enhanced status bar (bottom)
-        self.status_frame.pack(fill="x", padx=20, pady=(0, 20))
-
-        # Status bar layout
-        status_content = ctk.CTkFrame(
-            self.status_frame, fg_color="transparent")
-        status_content.pack(fill="x", padx=20, pady=15)
-
-        # Left side - status text
-        self.status_label.pack(side="left")
-
-        # Right side - progress bar
-        right_side = ctk.CTkFrame(status_content, fg_color="transparent")
-        right_side.pack(side="right")
-
-        # Progress bar
-        self.progress_bar.pack(side="left", padx=(
-            0, 15), fill="x", expand=True)
-
-    def create_top_controls(self):
-        """Create compact recording controls with horizontal button layout"""
-        # Compact top controls frame
-        self.top_controls_frame = ctk.CTkFrame(
-            self.header_frame,
-            fg_color=COLORS['bg_secondary'],
-            corner_radius=20,
-            height=45,
-            border_width=1,
-            border_color=COLORS['border_light']
+        presets_desc = ctk.CTkLabel(
+            presets_inner,
+            text="Apply a preset configuration with one click",
+            font=_f(12), text_color=TEXT2
         )
-        self.top_controls_frame.pack(fill="x", padx=25, pady=(0, 10))
+        presets_desc.pack(anchor="w", pady=(0, 12))
 
-        # Controls content with minimal spacing
-        controls_content = ctk.CTkFrame(
-            self.top_controls_frame, fg_color="transparent")
-        controls_content.pack(fill="both", expand=True, padx=15, pady=8)
+        preset_row = ctk.CTkFrame(presets_inner, fg_color="transparent")
+        preset_row.pack(fill="x")
 
-        # Left side - compact recording status
-        status_frame = ctk.CTkFrame(controls_content, fg_color="transparent")
-        status_frame.pack(side="left", fill="y")
+        presets = [
+            ("🎤 Interview",   "en-US",  "google",  "16000"),
+            ("📞 Phone Call",  "en-US",  "google",  "8000"),
+            ("🌍 Multilingual","es-ES",  "google",  "16000"),
+            ("💻 Offline",     "en-US",  "sphinx",  "16000"),
+        ]
+        for label, lang, eng, sr_ in presets:
+            ctk.CTkButton(
+                preset_row, text=label,
+                height=38, corner_radius=8,
+                fg_color=SURFACE2, hover_color=SURFACE3,
+                text_color=TEXT, font=_f(12, "bold"),
+                command=lambda l=lang, e=eng, s=sr_: self._apply_preset(l, e, s)
+            ).pack(side="left", padx=(0, 10))
 
-        self.recording_status_label = ctk.CTkLabel(
-            status_frame,
-            text="🎤 Ready",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=COLORS['text_primary']
+        # ─ Save / Load ──────────────────────────────────────
+        save_card = _card(body, "💾  PROFILE MANAGEMENT", title_color=GREEN)
+        save_card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 28))
+
+        save_inner = ctk.CTkFrame(save_card, fg_color="transparent")
+        save_inner.pack(fill="x", padx=16, pady=(0, 16))
+
+        save_row = ctk.CTkFrame(save_inner, fg_color="transparent")
+        save_row.pack(fill="x")
+
+        ctk.CTkButton(
+            save_row, text="💾  Save Settings",
+            width=160, height=40, corner_radius=8,
+            fg_color=GREEN, hover_color=GREEN_H,
+            text_color=WHITE, font=_f(13, "bold"),
+            command=self.save_settings
+        ).pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(
+            save_row, text="📂  Load Settings",
+            width=160, height=40, corner_radius=8,
+            fg_color=SURFACE2, hover_color=SURFACE3,
+            text_color=TEXT, font=_f(13, "bold"),
+            command=self.load_settings
+        ).pack(side="left")
+
+    # ─────────────────────────────────────────────────────────────
+    #  Output helpers
+    # ─────────────────────────────────────────────────────────────
+
+    def _set_output_placeholder(self):
+        self.results_box.configure(state="normal")
+        self.results_box.delete("1.0", "end")
+        self.results_box.insert("end",
+            "Your transcription will appear here.\n\n"
+            "• Select a file and click ⚡ Transcribe, or\n"
+            "• Click ⏺ Record to transcribe live from your microphone.\n"
         )
-        self.recording_status_label.pack(anchor="w")
+        self.results_box.configure(text_color=TEXT3)
 
-        # Compact status subtitle
-        self.recording_subtitle = ctk.CTkLabel(
-            status_frame,
-            text="Click to start",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text_secondary']
-        )
-        self.recording_subtitle.pack(anchor="w", pady=(1, 0))
+    def _write_output(self, text: str, append: bool = False):
+        """Write text to results box (thread-safe via after)."""
+        def _do():
+            self.results_box.configure(state="normal", text_color=TEXT)
+            if not append:
+                self.results_box.delete("1.0", "end")
+            self.results_box.insert("end", text)
+            self.results_box.see("end")
+            self._update_stats()
+        self.after(0, _do)
 
-        # Right side - horizontal button layout
-        self.top_controls_buttons = ctk.CTkFrame(
-            controls_content, fg_color="transparent")
-        self.top_controls_buttons.pack(side="right", fill="y")
+    def _append_output(self, text: str):
+        self._write_output(text, append=True)
 
-        # Create compact button container
-        button_container = ctk.CTkFrame(
-            self.top_controls_buttons,
-            fg_color=COLORS['bg_tertiary'],
-            corner_radius=12,
-            height=40
-        )
-        button_container.pack(fill="y", expand=True)
+    def _update_stats(self):
+        content = self.results_box.get("1.0", "end").strip()
+        words = len(content.split()) if content else 0
+        chars = len(content)
+        self._words_lbl.configure(text=f"{words:,} words")
+        self._chars_lbl.configure(text=f"{chars:,} characters")
 
-        # Horizontal button layout
-        button_content = ctk.CTkFrame(button_container, fg_color="transparent")
-        button_content.pack(fill="both", expand=True, padx=12, pady=8)
+    def _copy_results(self):
+        text = self.results_box.get("1.0", "end").strip()
+        if text:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self._show_toast("Copied to clipboard!", "green")
 
-        # Create buttons directly here with standardized size
-        self.record_button = ctk.CTkButton(
-            button_content,
-            text="🔴",
-            width=40,
-            height=30,
-            command=self.start_recording,
-            **self.error_button_style
-        )
+    # ─────────────────────────────────────────────────────────────
+    #  Status helpers
+    # ─────────────────────────────────────────────────────────────
 
-        self.pause_button = ctk.CTkButton(
-            button_content,
-            text="⏸️",
-            width=40,
-            height=30,
-            command=self.pause_recording,
-            **self.neumorphism_button_style
-        )
+    def update_status(self, message: str, color: str = TEXT2, dot_color: str = None):
+        def _do():
+            self._status_text.configure(text=message, text_color=color)
+            if dot_color:
+                self._status_dot.configure(text_color=dot_color)
+            self.update_idletasks()
+        self.after(0, _do)
 
-        self.stop_button = ctk.CTkButton(
-            button_content,
-            text="⏹️",
-            width=40,
-            height=30,
-            command=self.stop_recording,
-            **self.neumorphism_button_style
-        )
+    def _set_progress(self, value: float):
+        def _do():
+            if value <= 0:
+                self._progress_bar.grid_remove()
+            else:
+                self._progress_bar.grid()
+                self._progress_bar.set(min(value, 1.0))
+        self.after(0, _do)
 
-        self.export_button = ctk.CTkButton(
-            button_content,
-            text="💾",
-            width=40,
-            height=30,
-            command=self.export_results,
-            **self.neumorphism_button_style
-        )
+    def _show_toast(self, message: str, type_: str = "info"):
+        """Show a floating toast notification."""
+        color_map = {"green": GREEN, "red": RED, "orange": ORANGE,
+                     "blue": BLUE, "info": ACCENT}
+        bg_color = color_map.get(type_, ACCENT)
 
-        # Pack buttons horizontally with consistent spacing
-        self.record_button.pack(side="left", padx=(0, 6))
-        self.pause_button.pack(side="left", padx=(0, 6))
-        self.stop_button.pack(side="left", padx=(0, 6))
-        self.export_button.pack(side="left")
+        # Destroy previous toast
+        if self._toast_widget and self._toast_widget.winfo_exists():
+            self._toast_widget.destroy()
+        if self._toast_after_id:
+            self.after_cancel(self._toast_after_id)
 
-        # Initial button states - hide pause, disable stop and export
-        self.pause_button.pack_forget()  # Hide pause button initially
-        self.stop_button.configure(state="disabled")
-        self.export_button.configure(state="disabled")
+        toast = ctk.CTkFrame(self, fg_color=bg_color, corner_radius=10, height=46)
+        toast.place(relx=0.5, y=60, anchor="n")
+
+        ctk.CTkLabel(
+            toast, text=message, font=_f(13, "bold"),
+            text_color=WHITE, padx=20, pady=10
+        ).pack()
+
+        self._toast_widget = toast
+        self._toast_after_id = self.after(2800, lambda: toast.destroy() if toast.winfo_exists() else None)
+
+    # ─────────────────────────────────────────────────────────────
+    #  Recording timer
+    # ─────────────────────────────────────────────────────────────
+
+    def _start_timer(self):
+        self._rec_start_time = time.time()
+        self._tick_timer()
+
+    def _tick_timer(self):
+        if self.is_recording and not self.is_paused:
+            elapsed = int(time.time() - self._rec_start_time)
+            mins, secs = divmod(elapsed, 60)
+            self._rec_timer_var.set(f"⏺  {mins:02d}:{secs:02d}")
+        elif self.is_paused:
+            pass  # freeze timer display
+        else:
+            self._rec_timer_var.set("")
+            return
+        self._timer_id = self.after(1000, self._tick_timer)
+
+    def _stop_timer(self):
+        if self._timer_id:
+            self.after_cancel(self._timer_id)
+            self._timer_id = None
+        self._rec_timer_var.set("")
+
+    def _start_pulse(self):
+        """Pulse the recording dot."""
+        self._pulse_state = not self._pulse_state
+        if self.is_recording and not self.is_paused:
+            self._rec_dot.configure(text_color=RED if self._pulse_state else SURFACE3)
+            self._pulse_id = self.after(600, self._start_pulse)
+        else:
+            if self.is_paused:
+                self._rec_dot.configure(text_color=ORANGE)
+            else:
+                self._rec_dot.configure(text_color=TEXT3)
+
+    def _stop_pulse(self):
+        if self._pulse_id:
+            self.after_cancel(self._pulse_id)
+            self._pulse_id = None
+        self._rec_dot.configure(text_color=TEXT3)
+
+    # ─────────────────────────────────────────────────────────────
+    #  Recording logic
+    # ─────────────────────────────────────────────────────────────
+
+    def start_recording(self):
+        if self.is_recording:
+            self._show_toast("Already recording", "orange")
+            return
+
+        self.btn_record.configure(state="disabled")
+        self.btn_pause.configure(state="normal")
+        self.btn_stop.configure(state="normal")
+        self._rec_status_lbl.configure(text="Calibrating…", text_color=ORANGE)
+        update_status = self.update_status
+        update_status("Calibrating microphone…", ORANGE, ORANGE)
+
+        def _thread():
+            try:
+                self.transcriber.calibrate_microphone(duration=1.0)
+
+                self.after(0, lambda: self._rec_status_lbl.configure(
+                    text="● Recording", text_color=RED))
+                self.after(0, lambda: self.results_box.configure(
+                    state="normal", text_color=TEXT))
+                self.after(0, lambda: self.results_box.delete("1.0", "end"))
+                self.after(0, lambda: self.results_box.insert(
+                    "end", "🔴  Live Recording…\n\n"))
+
+                self.is_recording = True
+                self.is_paused = False
+                self.after(0, self._start_timer)
+                self.after(0, self._start_pulse)
+                self.after(0, lambda: update_status(
+                    "Recording — speak now", RED, RED))
+
+                self.cont_rec_active = True
+                while self.cont_rec_active and self.is_recording:
+                    if self.is_paused:
+                        time.sleep(0.4)
+                        continue
+                    try:
+                        result = self.transcriber.transcribe_realtime(
+                            duration=None, timeout=2)
+                        if result.get("text") and result["text"].strip():
+                            text = result["text"]
+                            self.after(0, lambda t=text: (
+                                self.results_box.insert("end", t + " "),
+                                self.results_box.see("end"),
+                                self._update_stats()
+                            ))
+                    except sr.WaitTimeoutError:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Recording error: {e}")
+                        time.sleep(1)
+
+                self.after(0, lambda: self._show_toast("Recording complete", "green"))
+
+            except Exception as e:
+                self.after(0, lambda: self._show_toast(f"Error: {e}", "red"))
+                self.after(0, self.stop_recording)
+
+        threading.Thread(target=_thread, daemon=True).start()
+
+    def pause_recording(self):
+        if self.is_recording and not self.is_paused:
+            self.is_paused = True
+            self.btn_pause.configure(text="▶  Resume")
+            self._rec_status_lbl.configure(text="⏸ Paused", text_color=ORANGE)
+            self._rec_dot.configure(text_color=ORANGE)
+            self.update_status("Paused", ORANGE, ORANGE)
+            self._show_toast("Recording paused", "orange")
+        elif self.is_paused:
+            self.is_paused = False
+            self.btn_pause.configure(text="⏸  Pause")
+            self._rec_status_lbl.configure(text="● Recording", text_color=RED)
+            self.after(0, self._start_pulse)
+            self.update_status("Recording — speak now", RED, RED)
+            self._show_toast("Recording resumed", "green")
+
+    def stop_recording(self):
+        if not self.is_recording:
+            return
+        self.cont_rec_active = False
+        self.is_recording = False
+        self.is_paused = False
+
+        self._stop_timer()
+        self._stop_pulse()
+
+        self.btn_record.configure(state="normal")
+        self.btn_pause.configure(state="disabled", text="⏸  Pause")
+        self.btn_stop.configure(state="disabled")
+        self._rec_status_lbl.configure(text="Microphone ready", text_color=TEXT2)
+        self.btn_export.configure(state="normal")
+        self.update_status("Recording stopped — results ready", GREEN, GREEN)
+        self._show_toast("Recording stopped", "green")
+
+    # ─────────────────────────────────────────────────────────────
+    #  File transcription
+    # ─────────────────────────────────────────────────────────────
 
     def browse_file(self):
-        """Browse for audio file"""
-        file_path = filedialog.askopenfilename(
+        path = filedialog.askopenfilename(
             title="Select Audio File",
             filetypes=[
                 ("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"),
-                ("WAV files", "*.wav"),
-                ("MP3 files", "*.mp3"),
-                ("M4A files", "*.m4a"),
-                ("All files", "*.*")
+                ("WAV files", "*.wav"), ("MP3 files", "*.mp3"),
+                ("M4A files", "*.m4a"), ("All files", "*.*")
             ]
         )
-        if file_path:
-            self.file_path_var.set(file_path)
-            self.current_file = file_path
-            # Reset queue when a primary file is chosen
+        if path:
+            self.file_path_var.set(path)
+            self.current_file = path
             self.file_queue = []
-            # Get and display audio duration
-            self.display_audio_duration(file_path)
+            self._display_file_info(path)
+
+    def _display_file_info(self, path: str):
+        try:
+            info = self.audio_processor.get_audio_info(path)
+            dur = info["duration"]
+            if dur < 3600:
+                dur_str = f"{int(dur//60):02d}:{int(dur%60):02d}"
+            else:
+                h = int(dur//3600); m = int((dur%3600)//60); s = int(dur%60)
+                dur_str = f"{h:02d}:{m:02d}:{s:02d}"
+            name = os.path.basename(path)
+            self._file_info_lbl.configure(
+                text=f"📄  {name}  ·  {dur_str}", text_color=TEXT2)
+        except Exception:
+            self._file_info_lbl.configure(
+                text=f"📄  {os.path.basename(path)}", text_color=TEXT2)
 
     def add_another_file(self):
-        """Add one or more extra files to a processing queue"""
-        file_paths = filedialog.askopenfilenames(
-            title="Add Additional Audio Files",
+        paths = filedialog.askopenfilenames(
+            title="Add Audio Files to Queue",
             filetypes=[
                 ("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"),
-                ("WAV files", "*.wav"),
-                ("MP3 files", "*.mp3"),
-                ("M4A files", "*.m4a"),
                 ("All files", "*.*")
             ]
         )
-        if file_paths:
-            # Initialize queue with current file if set and not already queued
+        if paths:
             if self.current_file and self.current_file not in self.file_queue:
                 self.file_queue.append(self.current_file)
-
-            for p in file_paths:
+            for p in paths:
                 if p not in self.file_queue:
                     self.file_queue.append(p)
-
-            self.update_status(f"📁 {len(self.file_queue)} file(s) queued for transcription")
-
-    def display_audio_duration(self, file_path):
-        """Display audio file duration information"""
-        try:
-            # Get audio info using AudioProcessor
-            audio_info = self.audio_processor.get_audio_info(file_path)
-            duration = audio_info['duration']
-
-            # Format duration as MM:SS or HH:MM:SS
-            if duration < 3600:  # Less than 1 hour
-                duration_str = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
-            else:  # 1 hour or more
-                hours = int(duration // 3600)
-                minutes = int((duration % 3600) // 60)
-                seconds = int(duration % 60)
-                duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-            # Update status to show duration
-            self.update_status(
-                f"📁 Selected: {os.path.basename(file_path)} ({duration_str})")
-
-        except Exception as e:
-            self.update_status(f"⚠️ Could not read audio duration: {str(e)}")
-
-    def browse_speaker_file(self):
-        """Browse for speaker detection file"""
-        file_path = filedialog.askopenfilename(
-            title="Select Audio File for Speaker Detection",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"),
-                ("WAV files", "*.wav"),
-                ("MP3 files", "*.mp3"),
-                ("M4A files", "*.m4a"),
-                ("All files", "*.*")
-            ]
-        )
-        if file_path:
-            self.speaker_file_var.set(file_path)
-
-    def browse_profile_file(self):
-        """Browse for profile creation file"""
-        file_path = filedialog.askopenfilename(
-            title="Select Audio File for Speaker Profile",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"),
-                ("WAV files", "*.wav"),
-                ("MP3 files", "*.mp3"),
-                ("M4A files", "*.m4a"),
-                ("All files", "*.*")
-            ]
-        )
-        if file_path:
-            self.profile_file_var.set(file_path)
-
-    def browse_identify_file(self):
-        """Browse for speaker identification file"""
-        file_path = filedialog.askopenfilename(
-            title="Select Audio File for Speaker Identification",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"),
-                ("WAV files", "*.wav"),
-                ("MP3 files", "*.mp3"),
-                ("M4A files", "*.m4a"),
-                ("All files", "*.*")
-            ]
-        )
-        if file_path:
-            self.identify_file_var.set(file_path)
+            self.update_status(f"📁  {len(self.file_queue)} file(s) queued", BLUE, BLUE)
+            self._show_toast(f"{len(self.file_queue)} files queued", "blue")
 
     def transcribe_file(self):
-        """Transcribe selected audio file"""
-        # Build list of files to process: queue (if any) or single current file
-        files_to_process = []
-        if self.file_queue:
-            files_to_process = self.file_queue.copy()
-        elif self.file_path_var.get():
-            files_to_process = [self.file_path_var.get()]
+        files = self.file_queue.copy() if self.file_queue else (
+            [self.file_path_var.get()] if self.file_path_var.get() else [])
 
-        if not files_to_process:
-            messagebox.showerror("Error", "Please select an audio file first")
+        if not files or not files[0]:
+            self._show_toast("Please select an audio file first", "orange")
             return
 
-        # For confirmation, we show info about the first file
-        first_file = files_to_process[0]
-        try:
-            audio_info = self.audio_processor.get_audio_info(first_file)
-            duration = audio_info['duration']
+        self.btn_transcribe.configure(state="disabled", text="⏳  Processing…")
+        self._set_progress(0.05)
+        self.results_box.configure(state="normal", text_color=TEXT)
+        self.results_box.delete("1.0", "end")
+        self._update_stats()
 
-            # Format duration as MM:SS or HH:MM:SS
-            if duration < 3600:  # Less than 1 hour
-                duration_str = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
-            else:  # 1 hour or more
-                hours = int(duration // 3600)
-                minutes = int((duration % 3600) // 60)
-                seconds = int(duration % 60)
-                duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-            # Show confirmation dialog
-            file_name = os.path.basename(first_file)
-            extra = ""
-            if len(files_to_process) > 1:
-                extra = f"\n(+ {len(files_to_process) - 1} more file(s) in queue)"
-            confirm_message = f"File: {file_name}{extra}\nDuration: {duration_str}\n\nDo you want to transcribe selected file(s)?"
-
-            if not messagebox.askyesno("Confirm Transcription", confirm_message):
-                return
-
-        except Exception as e:
-            # If we can't get duration, still show confirmation
-            file_name = os.path.basename(first_file)
-            extra = ""
-            if len(files_to_process) > 1:
-                extra = f"\n(+ {len(files_to_process) - 1} more file(s) in queue)"
-            confirm_message = f"File: {file_name}{extra}\n\nDo you want to transcribe selected file(s)?"
-
-            if not messagebox.askyesno("Confirm Transcription", confirm_message):
-                return
-
-        def transcribe_thread():
+        def _thread():
             try:
-                # Clear previous results before batch
-                self.root.after(0, lambda: self.results_text.delete(1.0, tk.END))
-
-                for idx, path in enumerate(files_to_process, start=1):
-                    # Get duration for large file detection
+                for idx, path in enumerate(files, 1):
                     file_duration = None
                     try:
                         info = self.audio_processor.get_audio_info(path)
-                        file_duration = info['duration']
+                        file_duration = info["duration"]
                     except Exception:
                         pass
 
-                    # Per-file progress callback
-                    def update_progress(progress, message, file_index=idx, total=len(files_to_process)):
-                        label = f"[{file_index}/{total}] {message}"
-                        self.root.after(0, lambda p=progress: self.progress_bar.set(p))
-                        self.root.after(0, lambda m=label: self.update_status(m))
-                        if is_large_file and hasattr(self, 'loading_progress'):
-                            self.root.after(
-                                0, lambda p=progress, m=label: self.update_loading_progress(p, m))
+                    is_large = file_duration is not None and file_duration > 120
+                    total = len(files)
 
-                    # Live text display callback for large files
-                    def display_live_text(text_chunk):
-                        """Append text chunks to results in real-time"""
-                        self.root.after(
-                            0, lambda t=text_chunk: self.results_text.insert(tk.END, t))
-                        self.root.after(0, lambda: self.results_text.see(tk.END))
+                    if is_large:
+                        header = (f"\n▶  File {idx}/{total}: {os.path.basename(path)}\n"
+                                  + "─" * 48 + "\n\n")
+                        self._append_output(header)
 
-                    is_large_file = file_duration is not None and file_duration > 120
-                    if is_large_file:
-                        self.show_loading_animation(f"Processing Large Audio File ({idx}/{len(files_to_process)})")
-                        # Show header for each large file
-                        header = f"\n🔴 LIVE TRANSCRIPTION ({idx}/{len(files_to_process)}): {os.path.basename(path)}\n" + "="*50 + "\n\n"
-                        self.root.after(0, lambda h=header: self.results_text.insert(tk.END, h))
+                    def _progress(prog, msg, i=idx, t=total):
+                        label = f"[{i}/{t}] {msg}"
+                        self._set_progress(prog)
+                        self.update_status(label, TEXT2)
 
-                    # Transcribe with progress callback and live display
+                    def _live_text(chunk):
+                        self.after(0, lambda c=chunk: (
+                            self.results_box.insert("end", c),
+                            self.results_box.see("end"),
+                            self._update_stats()
+                        ))
+
                     result = self.transcriber.transcribe_audio_file(
                         path,
-                        callback=update_progress if is_large_file else None,
-                        live_display=display_live_text if is_large_file else None
+                        callback=_progress if is_large else None,
+                        live_display=_live_text if is_large else None
                     )
 
-                    # Hide loading animation
-                    if is_large_file:
-                        self.hide_loading_animation()
+                    if not is_large:
+                        text = result.get("text", "")
+                        if total > 1:
+                            header = (f"▶  File {idx}/{total}: {os.path.basename(path)}\n"
+                                      + "─" * 48 + "\n")
+                            self._append_output(header)
+                        self._append_output(text + ("\n\n" if total > 1 else ""))
 
-                    # For non-large files, display nicely with typing effect
-                    if not is_large_file:
-                        self.display_transcription_result(result)
-
-                self.progress_bar.set(1.0)
-                self.update_status("Transcription completed successfully")
-                # Enable export buttons after any successful transcription
-                self.root.after(0, lambda: self.export_results_button.configure(state="normal"))
-                self.root.after(0, lambda: self.export_button.configure(state="normal"))
-
-                # Auto-hide progress after 2 seconds
-                self.root.after(2000, lambda: self.progress_bar.set(0))
+                self._set_progress(1.0)
+                self.after(0, lambda: self.btn_export.configure(state="normal"))
+                self.update_status("Transcription complete ✓", GREEN, GREEN)
+                self.after(0, lambda: self._show_toast("Transcription complete!", "green"))
+                self.after(2000, lambda: self._set_progress(0))
 
             except Exception as e:
-                self.hide_loading_animation()
-                self.update_status(f"Transcription failed: {str(e)}")
-                messagebox.showerror("Transcription Error", str(e))
-                self.progress_bar.set(0)
-
-        threading.Thread(target=transcribe_thread, daemon=True).start()
-
-    def toggle_recording(self):
-        """Toggle real-time recording"""
-        if not self.is_recording:
-            self.start_recording()
-        else:
-            self.stop_recording()
-
-    def detect_speakers(self):
-        """Detect speakers in audio file"""
-        if not self.speaker_file_var.get():
-            messagebox.showerror("Error", "Please select an audio file first")
-            return
-
-        def detect_thread():
-            try:
-                self.update_status("Detecting speakers...")
-                self.progress_bar.set(0.3)
-
-                # Load audio file
-                audio_data, sr = self.audio_processor.load_audio(
-                    self.speaker_file_var.get())
-
-                self.progress_bar.set(0.5)
-
-                # Detect speakers
-                max_speakers = self.max_speakers_var.get()
-                result = self.speaker_detector.detect_speakers(
-                    audio_data, max_speakers)
-
-                self.progress_bar.set(0.8)
-
-                # Display results
-                self.display_speaker_results(result)
-
-                self.progress_bar.set(1.0)
-                self.update_status("Speaker detection completed successfully")
-
-            except Exception as e:
-                self.update_status(f"Speaker detection failed: {str(e)}")
-                messagebox.showerror("Speaker Detection Error", str(e))
+                self.update_status(f"Error: {e}", RED, RED)
+                self.after(0, lambda: self._show_toast(f"Failed: {e}", "red"))
+                self._set_progress(0)
             finally:
-                self.progress_bar.set(0)
+                self.after(0, lambda: self.btn_transcribe.configure(
+                    state="normal", text="⚡  Transcribe File"))
 
-        threading.Thread(target=detect_thread, daemon=True).start()
+        threading.Thread(target=_thread, daemon=True).start()
 
-    def create_speaker_profile(self):
-        """Create speaker profile"""
-        if not self.profile_name_var.get() or not self.profile_file_var.get():
-            messagebox.showerror(
-                "Error", "Please provide speaker name and audio file")
-            return
-
-        def create_profile_thread():
-            try:
-                self.update_status("Creating speaker profile...")
-                self.progress_bar.set(0.3)
-
-                # Load audio file
-                audio_data, sr = self.audio_processor.load_audio(
-                    self.profile_file_var.get())
-
-                self.progress_bar.set(0.5)
-
-                # Create profile
-                profile = self.speaker_detector.create_speaker_profile(
-                    audio_data, self.profile_name_var.get()
-                )
-
-                self.progress_bar.set(0.8)
-
-                # Display results
-                result_text = f"Speaker Profile Created:\n"
-                result_text += f"Name: {profile['speaker_name']}\n"
-                result_text += f"Created: {profile['created_at']}\n"
-                result_text += f"Sample Rate: {profile['sample_rate']}\n"
-
-                self.management_results_text.insert(
-                    tk.END, result_text + "\n" + "-"*50 + "\n")
-
-                self.progress_bar.set(1.0)
-                self.update_status("Speaker profile created successfully")
-
-            except Exception as e:
-                self.update_status(f"Profile creation failed: {str(e)}")
-                messagebox.showerror("Profile Creation Error", str(e))
-            finally:
-                self.progress_bar.set(0)
-
-        threading.Thread(target=create_profile_thread, daemon=True).start()
-
-    def identify_speaker(self):
-        """Identify speaker from audio file"""
-        if not self.identify_file_var.get():
-            messagebox.showerror("Error", "Please select an audio file first")
-            return
-
-        def identify_thread():
-            try:
-                self.update_status("Identifying speaker...")
-                self.progress_bar.set(0.3)
-
-                # Load audio file
-                audio_data, sr = self.audio_processor.load_audio(
-                    self.identify_file_var.get())
-
-                self.progress_bar.set(0.5)
-
-                # Identify speaker
-                result = self.speaker_detector.identify_speaker(audio_data)
-
-                self.progress_bar.set(0.8)
-
-                # Display results
-                if result.get('error'):
-                    result_text = f"Error: {result['error']}\n"
-                else:
-                    result_text = f"Speaker Identification Results:\n"
-                    result_text += f"Identified Speaker: {result['identified_speaker']}\n"
-                    result_text += f"Confidence: {result['confidence']:.3f}\n"
-                    result_text += f"All Similarities: {result['all_similarities']}\n"
-
-                self.management_results_text.insert(
-                    tk.END, result_text + "\n" + "-"*50 + "\n")
-
-                self.progress_bar.set(1.0)
-                self.update_status("Speaker identification completed")
-
-            except Exception as e:
-                self.update_status(f"Speaker identification failed: {str(e)}")
-                messagebox.showerror("Speaker Identification Error", str(e))
-            finally:
-                self.progress_bar.set(0)
-
-        threading.Thread(target=identify_thread, daemon=True).start()
-
-    def display_transcription_result(self, result):
-        """Display only the transcribed text with fast typing animation"""
-        # Clear ALL text when transcription starts (tips + placeholder)
-        self.results_text.delete(1.0, tk.END)
-
-        # Get only the transcribed text
-        text_content = result.get('text', '')
-
-        # Start fast typing animation for just the text
-        self.type_text_only(text_content)
-
-    def type_text_only(self, text_content):
-        """Type only the transcribed text with fast animation"""
-        if not text_content:
-            return
-
-        # Configure text widget for bold text
-        self.results_text.tag_configure("bold", font=('Segoe UI', 12, 'bold'))
-
-        # Start typing animation
-        self.typing_index = 0
-        self.typing_text = text_content
-        self.current_position = "1.0"  # Start at the beginning
-
-        self.continue_text_typing()
-
-    def continue_text_typing(self):
-        """Continue typing the text with fast animation"""
-        if self.typing_index < len(self.typing_text):
-            char = self.typing_text[self.typing_index]
-
-            # Insert character at current position
-            self.results_text.insert(tk.END, char)
-
-            # Apply bold formatting to the character
-            start_pos = f"1.0+{self.typing_index}c"
-            end_pos = f"1.0+{self.typing_index + 1}c"
-            self.results_text.tag_add("bold", start_pos, end_pos)
-
-            # Scroll to show the new character
-            self.results_text.see(tk.END)
-
-            self.typing_index += 1
-            # Much faster typing - 10ms delay
-            self.root.after(10, self.continue_text_typing)
-
-    def display_speaker_results(self, result):
-        """Display speaker detection results"""
-        if result.get('error'):
-            result_text = f"Error: {result['error']}\n"
-        else:
-            result_text = f"Speaker Detection Results:\n"
-            result_text += f"Total Speakers: {result['total_speakers']}\n"
-            result_text += f"Processing Time: {result['processing_time']}\n\n"
-
-            for speaker in result['speakers']:
-                result_text += f"Speaker: {speaker['speaker_id']}\n"
-                result_text += f"Segments: {len(speaker['segments'])}\n"
-                result_text += f"Total Duration: {speaker['total_duration']:.2f}s\n"
-                result_text += f"Segments:\n"
-
-                for segment in speaker['segments']:
-                    result_text += f"  - {segment['start_time']:.2f}s to {segment['end_time']:.2f}s\n"
-                result_text += "\n"
-
-        self.speaker_results_text.insert(tk.END, result_text + "-" * 50 + "\n")
-        self.speaker_results_text.see(tk.END)
+    # ─────────────────────────────────────────────────────────────
+    #  Results management
+    # ─────────────────────────────────────────────────────────────
 
     def clear_results(self):
-        """Clear all results"""
-        self.results_text.delete(1.0, tk.END)
         self.transcriber.clear_history()
-        self.update_status("Results cleared")
+        self._set_output_placeholder()
+        self._update_stats()
+        self.btn_export.configure(state="disabled")
+        self.update_status("Output cleared", TEXT2)
 
     def export_results(self):
-        """Export transcription results"""
         if not self.transcriber.get_transcription_history():
-            messagebox.showwarning(
-                "Warning", "No transcription results to export")
+            # Try to export what's in the box
+            content = self.results_box.get("1.0", "end").strip()
+            if not content:
+                self._show_toast("Nothing to export", "orange")
+                return
+            path = filedialog.asksaveasfilename(
+                title="Export Transcription",
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+            )
+            if path:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                self._show_toast("Exported successfully!", "green")
             return
 
-        file_path = filedialog.asksaveasfilename(
+        path = filedialog.asksaveasfilename(
             title="Export Transcription Results",
             defaultextension=".json",
             filetypes=[
@@ -1320,390 +1251,272 @@ class VoiceTranscriberGUI:
                 ("CSV files", "*.csv")
             ]
         )
-
-        if file_path:
+        if path:
             try:
-                format_type = file_path.split('.')[-1].lower()
-                self.transcriber.export_transcriptions(file_path, format_type)
-                messagebox.showinfo(
-                    "Success", f"Results exported to {file_path}")
+                fmt = path.rsplit(".", 1)[-1].lower()
+                self.transcriber.export_transcriptions(path, fmt)
+                self._show_toast(f"Exported as .{fmt}!", "green")
             except Exception as e:
-                messagebox.showerror("Export Error", str(e))
+                self._show_toast(f"Export failed: {e}", "red")
 
-    def update_language(self, language):
-        """Update transcription language"""
-        self.transcriber.set_language(language)
-        self.update_status(f"Language changed to: {language}")
+    def display_transcription_result(self, result):
+        text = result.get("text", "")
+        self._write_output(text)
+        self.btn_export.configure(state="normal")
+
+    # ─────────────────────────────────────────────────────────────
+    #  Speaker Detection
+    # ─────────────────────────────────────────────────────────────
+
+    def browse_speaker_file(self):
+        path = filedialog.askopenfilename(title="Select Audio File for Speaker Detection",
+                                          filetypes=[("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"), ("All files", "*.*")])
+        if path:
+            self.speaker_file_var.set(path)
+
+    def browse_profile_file(self):
+        path = filedialog.askopenfilename(title="Select Audio for Speaker Profile",
+                                          filetypes=[("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"), ("All files", "*.*")])
+        if path:
+            self.profile_file_var.set(path)
+
+    def browse_identify_file(self):
+        path = filedialog.askopenfilename(title="Select Audio File to Identify",
+                                          filetypes=[("Audio files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac"), ("All files", "*.*")])
+        if path:
+            self.identify_file_var.set(path)
+
+    def _write_speaker_results(self, text: str):
+        def _do():
+            self.speaker_results_box.configure(state="normal")
+            self.speaker_results_box.delete("1.0", "end")
+            self.speaker_results_box.insert("end", text)
+            self.speaker_results_box.configure(state="disabled")
+        self.after(0, _do)
+
+    def _write_identify_results(self, text: str):
+        def _do():
+            self.management_results_box.configure(state="normal")
+            self.management_results_box.delete("1.0", "end")
+            self.management_results_box.insert("end", text)
+            self.management_results_box.configure(state="disabled")
+        self.after(0, _do)
+
+    def detect_speakers(self):
+        if not self.speaker_file_var.get():
+            self._show_toast("Please select an audio file first", "orange")
+            return
+
+        self._set_progress(0.1)
+        self.update_status("Detecting speakers…", BLUE, BLUE)
+
+        def _thread():
+            try:
+                audio_data, sr_ = self.audio_processor.load_audio(self.speaker_file_var.get())
+                self._set_progress(0.5)
+                max_sp = int(self.max_speakers_var.get() or 5)
+                result = self.speaker_detector.detect_speakers(audio_data, max_sp)
+                self._set_progress(0.9)
+
+                if result.get("error"):
+                    text = f"Error: {result['error']}"
+                else:
+                    lines = [
+                        f"Total Speakers:   {result['total_speakers']}",
+                        f"Processing Time:  {result['processing_time']}",
+                        ""
+                    ]
+                    for sp in result.get("speakers", []):
+                        lines.append(f"Speaker: {sp['speaker_id']}")
+                        lines.append(f"  Segments: {len(sp['segments'])}")
+                        lines.append(f"  Total Duration: {sp['total_duration']:.2f}s")
+                        for seg in sp["segments"]:
+                            lines.append(f"    • {seg['start_time']:.2f}s → {seg['end_time']:.2f}s")
+                        lines.append("")
+                    text = "\n".join(lines)
+
+                self._write_speaker_results(text)
+                self._set_progress(0)
+                self.update_status("Speaker detection complete ✓", GREEN, GREEN)
+                self.after(0, lambda: self._show_toast("Speakers detected!", "green"))
+
+            except Exception as e:
+                self._set_progress(0)
+                self.update_status(f"Speaker detection failed: {e}", RED, RED)
+                self.after(0, lambda: self._show_toast(f"Error: {e}", "red"))
+
+        threading.Thread(target=_thread, daemon=True).start()
+
+    def create_speaker_profile(self):
+        if not self.profile_name_var.get() or not self.profile_file_var.get():
+            self._show_toast("Enter speaker name and select audio file", "orange")
+            return
+
+        self._set_progress(0.2)
+        self.update_status("Creating speaker profile…", BLUE, BLUE)
+
+        def _thread():
+            try:
+                audio_data, sr_ = self.audio_processor.load_audio(self.profile_file_var.get())
+                self._set_progress(0.5)
+                profile = self.speaker_detector.create_speaker_profile(
+                    audio_data, self.profile_name_var.get())
+                self._set_progress(0.9)
+
+                text = (f"Profile Created Successfully\n"
+                        f"────────────────────────────\n"
+                        f"Name:         {profile['speaker_name']}\n"
+                        f"Created at:   {profile['created_at']}\n"
+                        f"Sample Rate:  {profile['sample_rate']}\n")
+
+                self.after(0, lambda: messagebox.showinfo("Profile Created",
+                    f"Speaker profile for '{profile['speaker_name']}' created!"))
+                self._set_progress(0)
+                self.update_status("Speaker profile created ✓", GREEN, GREEN)
+                self.after(0, lambda: self._show_toast("Profile created!", "green"))
+
+            except Exception as e:
+                self._set_progress(0)
+                self.update_status(f"Profile creation failed: {e}", RED, RED)
+                self.after(0, lambda: self._show_toast(f"Error: {e}", "red"))
+
+        threading.Thread(target=_thread, daemon=True).start()
+
+    def identify_speaker(self):
+        if not self.identify_file_var.get():
+            self._show_toast("Please select an audio file first", "orange")
+            return
+
+        self._set_progress(0.2)
+        self.update_status("Identifying speaker…", PURPLE, PURPLE)
+
+        def _thread():
+            try:
+                audio_data, sr_ = self.audio_processor.load_audio(self.identify_file_var.get())
+                self._set_progress(0.5)
+                result = self.speaker_detector.identify_speaker(audio_data)
+                self._set_progress(0.9)
+
+                if result.get("error"):
+                    text = f"Error: {result['error']}"
+                else:
+                    text = (f"Identification Result\n"
+                            f"────────────────────────────\n"
+                            f"Speaker:     {result['identified_speaker']}\n"
+                            f"Confidence:  {result['confidence']:.3f}\n"
+                            f"\nAll Similarities:\n{result['all_similarities']}")
+
+                self._write_identify_results(text)
+                self._set_progress(0)
+                self.update_status("Speaker identified ✓", GREEN, GREEN)
+                self.after(0, lambda: self._show_toast("Speaker identified!", "green"))
+
+            except Exception as e:
+                self._set_progress(0)
+                self.update_status(f"Identification failed: {e}", RED, RED)
+                self.after(0, lambda: self._show_toast(f"Error: {e}", "red"))
+
+        threading.Thread(target=_thread, daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────
+    #  Settings
+    # ─────────────────────────────────────────────────────────────
+
+    def update_language(self, lang):
+        self.transcriber.set_language(lang)
+        self.language_var.set(lang)
+        self.update_status(f"Language → {lang}", TEXT2)
 
     def update_engine(self, engine):
-        """Update recognition engine"""
         self.transcriber.set_engine(engine)
-        self.update_status(f"Engine changed to: {engine}")
+        self.engine_var.set(engine)
+        self.update_status(f"Engine → {engine}", TEXT2)
 
-    def update_sample_rate(self, sample_rate):
-        """Update sample rate"""
-        self.audio_processor.sample_rate = int(sample_rate)
-        self.speaker_detector.sample_rate = int(sample_rate)
-        self.update_status(f"Sample rate changed to: {sample_rate}")
+    def update_sample_rate(self, sr_val):
+        try:
+            rate = int(sr_val)
+            self.audio_processor.sample_rate = rate
+            self.speaker_detector.sample_rate = rate
+            self.update_status(f"Sample rate → {rate} Hz", TEXT2)
+        except ValueError:
+            pass
+
+    def _apply_preset(self, lang: str, engine: str, sr_: str):
+        self.language_var.set(lang)
+        self.engine_var.set(engine)
+        self.sample_rate_var.set(sr_)
+        self.transcriber.set_language(lang)
+        self.transcriber.set_engine(engine)
+        try:
+            self.audio_processor.sample_rate = int(sr_)
+            self.speaker_detector.sample_rate = int(sr_)
+        except Exception:
+            pass
+        self.lang_combo.set(lang)
+        self.engine_combo.set(engine)
+        self.update_status(f"Preset applied: {lang} · {engine} · {sr_} Hz", ACCENT)
+        self._show_toast("Preset applied!", "blue")
 
     def save_settings(self):
-        """Save current settings"""
         settings = {
-            'language': self.language_var.get(),
-            'engine': self.engine_var.get(),
-            'sample_rate': self.sample_rate_var.get()
+            "language": self.language_var.get(),
+            "engine": self.engine_var.get(),
+            "sample_rate": self.sample_rate_var.get()
         }
-
         try:
-            with open('settings.json', 'w') as f:
+            with open("settings.json", "w") as f:
                 json.dump(settings, f, indent=2)
-            messagebox.showinfo("Success", "Settings saved successfully")
+            self._show_toast("Settings saved!", "green")
         except Exception as e:
-            messagebox.showerror("Save Error", str(e))
+            self._show_toast(f"Save failed: {e}", "red")
 
     def load_settings(self):
-        """Load saved settings"""
         try:
-            if os.path.exists('settings.json'):
-                with open('settings.json', 'r') as f:
-                    settings = json.load(f)
-
-                self.language_var.set(settings.get('language', 'en-US'))
-                self.engine_var.set(settings.get('engine', 'google'))
-                self.sample_rate_var.set(settings.get('sample_rate', 16000))
-
-                messagebox.showinfo("Success", "Settings loaded successfully")
+            if os.path.exists("settings.json"):
+                with open("settings.json") as f:
+                    s = json.load(f)
+                lang   = s.get("language", "en-US")
+                engine = s.get("engine",   "google")
+                sr_    = str(s.get("sample_rate", "16000"))
+                self._apply_preset(lang, engine, sr_)
+                self._show_toast("Settings loaded!", "green")
             else:
-                messagebox.showwarning("Warning", "No settings file found")
+                self._show_toast("No saved settings found", "orange")
         except Exception as e:
-            messagebox.showerror("Load Error", str(e))
+            self._show_toast(f"Load failed: {e}", "red")
 
-    def load_speaker_profiles(self):
-        """Load speaker profiles on startup"""
+    def _load_settings_silent(self):
         try:
-            if os.path.exists('speaker_profiles.json'):
-                self.speaker_detector.load_speaker_profiles(
-                    'speaker_profiles.json')
-                self.update_status("Speaker profiles loaded")
+            if os.path.exists("settings.json"):
+                with open("settings.json") as f:
+                    s = json.load(f)
+                self.language_var.set(s.get("language", "en-US"))
+                self.engine_var.set(s.get("engine", "google"))
+                self.sample_rate_var.set(str(s.get("sample_rate", "16000")))
+                self.transcriber.set_language(s.get("language", "en-US"))
+                self.transcriber.set_engine(s.get("engine", "google"))
+        except Exception:
+            pass
+
+    def _load_speaker_profiles(self):
+        try:
+            if os.path.exists("speaker_profiles.json"):
+                self.speaker_detector.load_speaker_profiles("speaker_profiles.json")
+                logger.info("Speaker profiles loaded")
         except Exception as e:
-            logger.warning(f"Could not load speaker profiles: {str(e)}")
+            logger.warning(f"Could not load speaker profiles: {e}")
 
-    def update_status(self, message):
-        """Update status label with enhanced styling"""
-        self.status_label.configure(text=message)
-        self.root.update_idletasks()
-
-    def start_recording(self):
-        """Start recording with proper functionality"""
-        if not self.is_recording:
-            # Show loading animation
-            self.show_loading_animation("Starting recording...")
-
-            def recording_thread():
-                try:
-                    # Calibrate microphone ONCE at the start
-                    self.root.after(100, lambda: self.update_status(
-                        "🎤 Calibrating microphone..."))
-                    self.transcriber.calibrate_microphone(duration=1.0)
-
-                    # Hide loading and show recording UI
-                    self.root.after(200, lambda: self.hide_loading_animation())
-                    
-                    # Start recording
-                    self.root.after(200, lambda: self.update_status(
-                        "🔴 Recording - Speak now!"))
-                    self.root.after(200, lambda: self.recording_status_label.configure(
-                        text="🔴 Live Recording"))
-                    self.root.after(200, lambda: self.recording_subtitle.configure(
-                        text="Transcribing as you speak"))
-                    self.root.after(300, lambda: self.record_button.configure(
-                        text="🔴", state="disabled"))
-                    self.root.after(300, lambda: self.pause_button.pack(
-                        side="left", padx=(0, 6)))  # Show pause button
-                    self.root.after(
-                        300, lambda: self.pause_button.configure(state="normal"))
-                    self.root.after(
-                        300, lambda: self.stop_button.configure(state="normal"))
-
-                    # Disable settings during recording
-                    self.root.after(
-                        300, lambda: self.disable_settings_during_recording())
-
-                    # Start actual recording
-                    self.is_recording = True
-                    self.is_paused = False
-
-                    # Setup live transcription display for recording
-                    self.root.after(
-                        0, lambda: self.results_text.delete(1.0, tk.END))
-                    self.root.after(0, lambda: self.results_text.insert(
-                        tk.END, "🔴 LIVE RECORDING - Speak Now:\n" + "="*50 + "\n\n"))
-
-                    # Start continuous recording loop
-                    self.continuous_recording_active = True
-                    while self.continuous_recording_active and self.is_recording:
-                        try:
-                            # Don't skip pause state
-                            if self.is_paused:
-                                time.sleep(0.5)  # Wait while paused
-                                continue
-
-                            # Record continuously - listens until natural pause in speech
-                            result = self.transcriber.transcribe_realtime(
-                                duration=None,  # No duration limit - continuous
-                                timeout=2  # Wait up to 2 seconds for speech to start
-                            )
-
-                            # Display result LIVE if there's text
-                            if result.get('text') and result['text'].strip():
-                                text = result['text']
-                                # Remove disfluencies for live transcription too
-                                text = self.transcriber._remove_disfluencies(text)
-                                # Append to live transcription immediately (0ms delay)
-                                self.root.after(
-                                    0, lambda t=text: self.results_text.insert(tk.END, t + " "))
-                                self.root.after(
-                                    0, lambda: self.results_text.see(tk.END))
-                                logger.info(f"Displayed live text: {text[:30]}...")
-
-                            # No artificial delay - keep listening immediately
-                            # Loop continues immediately to start next listen cycle
-                            
-                        except sr.WaitTimeoutError:
-                            # No speech detected - this is normal, just keep listening
-                            # No delay needed - immediately continue to next listen cycle
-                            continue
-                        except Exception as e:
-                            logger.error(f"Recording error: {str(e)}")
-                            self.root.after(0, lambda e=e: self.show_notification(
-                                f"Recording error: {str(e)}", "error"))
-                            time.sleep(1)  # Brief pause before retrying
-                            continue
-
-                    self.root.after(0, lambda: self.show_notification(
-                        "🎤 Recording completed", "success"))
-
-                except Exception as e:
-                    self.root.after(0, lambda: self.show_notification(
-                        f"Recording failed: {str(e)}", "error"))
-                    self.root.after(0, lambda: self.stop_recording())
-                finally:
-                    self.root.after(0, lambda: self.hide_loading_animation())
-
-            threading.Thread(target=recording_thread, daemon=True).start()
-        else:
-            self.show_notification("⚠️ Already recording", "warning")
-
-    def pause_recording(self):
-        """Pause recording"""
-        if self.is_recording and not self.is_paused:
-            self.is_paused = True
-            self.pause_button.configure(text="▶️ Resume")
-            self.recording_status_label.configure(text="⏸️ Paused")
-            self.recording_subtitle.configure(text="Click resume")
-            self.update_status("⏸️ Recording paused")
-            self.show_notification("⏸️ Recording paused", "warning")
-        elif self.is_paused:
-            self.is_paused = False
-            self.pause_button.configure(text="⏸️ Pause")
-            self.recording_status_label.configure(text="🔴 Recording")
-            self.recording_subtitle.configure(text="Live transcription")
-            self.update_status("🔴 Recording resumed")
-            self.show_notification("▶️ Recording resumed", "success")
-        else:
-            self.show_notification("⚠️ Not recording", "warning")
-
-    def stop_recording(self):
-        """Stop recording completely"""
-        if self.is_recording:
-            # Show loading animation
-            self.show_loading_animation("Stopping recording...")
-
-            # Stop continuous recording
-            self.continuous_recording_active = False
-            self.is_recording = False
-            self.is_paused = False
-
-            # Update UI
-            self.record_button.configure(text="🔴", state="normal")
-            self.pause_button.pack_forget()  # Hide pause button
-            self.stop_button.configure(state="disabled")
-            self.export_button.configure(state="disabled")
-            self.recording_status_label.configure(text="🎤 Ready")
-            self.recording_subtitle.configure(text="Click to start")
-
-            # Re-enable settings
-            self.enable_settings_after_recording()
-
-            self.update_status("⏹️ Recording stopped")
-            self.show_notification("⏹️ Recording stopped", "info")
-            self.hide_loading_animation()
-            # Allow exporting any recorded content
-            self.export_results_button.configure(state="normal")
-            self.export_button.configure(state="normal")
-        else:
-            self.show_notification("⚠️ Not recording", "warning")
-
-    def show_loading_animation(self, message="Loading..."):
-        """Show loading animation with enhanced display"""
-        self.loading_frame = ctk.CTkFrame(
-            self.root,
-            fg_color=COLORS['bg_secondary'],
-            corner_radius=30,
-            width=500,
-            height=200
-        )
-        self.loading_frame.place(relx=0.5, rely=0.5, anchor="center")
-
-        # Main loading text
-        self.loading_label = ctk.CTkLabel(
-            self.loading_frame,
-            text=message,
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color=COLORS['text_primary']
-        )
-        self.loading_label.pack(pady=(20, 10))
-
-        # Subtitle with dots
-        self.loading_subtitle = ctk.CTkLabel(
-            self.loading_frame,
-            text="Please wait",
-            font=ctk.CTkFont(size=14),
-            text_color=COLORS['text_secondary']
-        )
-        self.loading_subtitle.pack(pady=(0, 20))
-
-        # Progress indicator
-        self.loading_progress = ctk.CTkProgressBar(
-            self.loading_frame,
-            fg_color=COLORS['bg_tertiary'],
-            progress_color=COLORS['accent_primary'],
-            corner_radius=15,
-            height=30,
-            width=400
-        )
-        self.loading_progress.pack(pady=(0, 20))
-        self.loading_progress.set(0)
-
-        # Loading dots animation
-        self.loading_dots = 0
-        self.loading_message_base = message
-        self.animate_loading_dots()
-
-    def animate_loading_dots(self):
-        """Animate loading dots"""
-        if hasattr(self, 'loading_frame') and self.loading_frame.winfo_exists():
-            dots = '.' * (self.loading_dots % 4)
-            self.loading_subtitle.configure(
-                text=f"{self.loading_message_base}{dots}")
-            self.loading_dots += 1
-            self.root.after(500, self.animate_loading_dots)
-
-    def hide_loading_animation(self):
-        """Hide loading animation"""
-        if hasattr(self, 'loading_frame'):
-            self.loading_frame.destroy()
-            self.loading_dots = 0
-
-    def update_loading_progress(self, progress, message):
-        """Update loading animation progress"""
-        if hasattr(self, 'loading_progress'):
-            self.loading_progress.set(progress)
-        if hasattr(self, 'loading_label'):
-            self.loading_label.configure(text=message)
-
-    def disable_settings_during_recording(self):
-        """Disable settings controls during recording"""
-        # Disable file selection
-        self.file_entry.configure(state="disabled")
-        self.browse_button.configure(state="disabled")
-        self.transcribe_file_button.configure(state="disabled")
-
-        # Disable other controls
-        self.clear_button.configure(state="disabled")
-
-        # Disable tab switching
-        for tab_name in self.notebook._segmented_button._buttons_dict:
-            self.notebook._segmented_button._buttons_dict[tab_name].configure(
-                state="disabled")
-
-    def enable_settings_after_recording(self):
-        """Re-enable settings controls after recording"""
-        # Re-enable file selection
-        self.file_entry.configure(state="normal")
-        self.browse_button.configure(state="normal")
-        self.transcribe_file_button.configure(state="normal")
-
-        # Re-enable other controls
-        self.clear_button.configure(state="normal")
-
-        # Re-enable tab switching
-        for tab_name in self.notebook._segmented_button._buttons_dict:
-            self.notebook._segmented_button._buttons_dict[tab_name].configure(
-                state="normal")
-
-    def start_live_transcription(self):
-        """Start live transcription"""
-        self.show_notification("🎤 Live transcription started", "success")
-        self.update_status("🎤 Live transcription active")
-
-    def toggle_recording(self):
-        """Toggle recording state"""
-        if not self.is_recording:
-            self.start_recording()
-        else:
-            self.stop_recording()
-
-    def show_notification(self, message, type="info"):
-        """Show styled notification instead of messagebox"""
-        # Create notification frame
-        notification = ctk.CTkFrame(
-            self.root,
-            fg_color=COLORS['success'] if type == "success" else
-            COLORS['warning'] if type == "warning" else
-            COLORS['error'] if type == "error" else COLORS['accent'],
-            corner_radius=10,
-            height=60
-        )
-
-        # Position notification
-        notification.place(relx=0.5, rely=0.1, anchor="center")
-
-        # Notification content
-        notification_label = ctk.CTkLabel(
-            notification,
-            text=message,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=COLORS['text']
-        )
-        notification_label.pack(expand=True)
-
-        # Auto-hide notification
-        def hide_notification():
-            notification.destroy()
-
-        self.root.after(3000, hide_notification)
-
-    def animate_button_click(self, button):
-        """Animate button click with scale effect"""
-        original_width = button.cget('width')
-        original_height = button.cget('height')
-
-        # Scale down
-        button.configure(width=int(original_width * 0.95),
-                         height=int(original_height * 0.95))
-
-        # Scale back up
-        self.root.after(100, lambda: button.configure(
-            width=original_width, height=original_height))
+    # ─────────────────────────────────────────────────────────────
+    #  Entry point
+    # ─────────────────────────────────────────────────────────────
 
     def run(self):
-        """Run the GUI application"""
-        self.root.mainloop()
+        self.mainloop()
 
+
+# ─────────────────────────────────────────────────────────────────
 
 def main():
-    """Main function to run the GUI application"""
     app = VoiceTranscriberGUI()
     app.run()
 
