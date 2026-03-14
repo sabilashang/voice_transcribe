@@ -1,25 +1,15 @@
 """
-AI Text Enhancer for Voice Transcription
-=========================================
-Transforms raw, fragmented, and incomprehensible voice-to-text output
-into clean, contextually coherent, and well-structured text using AI
-language models.
+AI Text Enhancer for Voice Transcription (Gemini 1.5 Flash Only)
+================================================================
+Transforms raw, fragmented, and imperfect voice-to-text output
+into clean, contextually coherent, and well-structured text using
+**Google Gemini 1.5** models.
 
-Supported AI Providers:
-  - Moonshot     (Kimi K2.5, Kimi K2-Thinking, moonshot-v1-auto, etc.)  ← DEFAULT
-  - OpenAI       (GPT-4o, GPT-4, GPT-3.5-turbo)
-  - Anthropic    (Claude 3.5 Sonnet, Claude 3 Opus/Haiku)
-  - Google       (Gemini 1.5 Pro/Flash)
-  - Ollama       (local — Llama 3, Mistral, Phi-3, etc.)
+This module is now **BYOK (Bring Your Own Key)** and **Gemini-only**:
 
-Moonshot / Kimi Models (api.moonshot.ai):
-  - kimi-k2.5                  ← recommended, best quality
-  - kimi-k2-thinking-turbo     ← fast reasoning
-  - kimi-k2-thinking           ← deep reasoning
-  - moonshot-v1-auto           ← auto-selects best tier
-  - moonshot-v1-128k           ← longest context (128 k tokens)
-  - moonshot-v1-32k
-  - moonshot-v1-8k             ← fastest / cheapest
+  - Provider: Google Generative AI (Gemini)
+  - Models:   Gemini 1.5 Flash (default) or other Gemini text models
+  - API Key:  You must supply your own Gemini API key at runtime
 
 Enhancement Modes:
   - clean        → Remove filler words & fix grammar (minimal changes)
@@ -31,15 +21,16 @@ Enhancement Modes:
   - meeting_notes→ Format as meeting notes with action items
   - technical    → Clean technical documentation style
 
-Usage (Moonshot/Kimi — default):
-  enhancer = AITextEnhancer()                        # uses MOONSHOT_API_KEY env var
-  result   = enhancer.enhance(raw_text, mode="enhance")
-  print(result.enhanced_text)
+Usage:
+  from ai_text_enhancer import EnhancerConfig, AITextEnhancer
 
-Usage (explicit):
-  enhancer = AITextEnhancer(EnhancerConfig(
-      provider="moonshot", model="kimi-k2.5"
-  ))
+  cfg       = EnhancerConfig(
+      google_api_key="YOUR_GEMINI_API_KEY",
+      model="gemini-1.5-flash"
+  )
+  enhancer  = AITextEnhancer(cfg)
+  result    = enhancer.enhance(raw_text, mode="enhance")
+  print(result.enhanced_text)
 """
 
 from __future__ import annotations
@@ -62,15 +53,6 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Pre-configured API Keys
-#  Priority: environment variable > constant below
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Moonshot / Kimi — set here so the module works without a .env file.
-# Override at any time by setting the MOONSHOT_API_KEY environment variable.
-_MOONSHOT_API_KEY_DEFAULT = "sk-JFagqIalz8zEug95Q0moiAWuOZQjwkgL4Wb7JuleYmznwo7Y"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -112,21 +94,14 @@ class EnhancementResult:
 @dataclass
 class EnhancerConfig:
     """Configuration for the AI Text Enhancer."""
-    # Provider: "moonshot" | "openai" | "anthropic" | "google" | "ollama"
-    provider:    str  = "moonshot"
+    # Provider is fixed to Google / Gemini
+    provider:    str  = "google"
 
-    # Model names per provider (defaults to Moonshot Kimi K2.5)
-    model:       str  = "kimi-k2.5"
+    # Gemini model name
+    model:       str  = "gemini-1.5-flash"
 
-    # API keys — read from environment by default
-    moonshot_api_key:  Optional[str] = None   # env: MOONSHOT_API_KEY
-    openai_api_key:    Optional[str] = None
-    anthropic_api_key: Optional[str] = None
+    # Google / Gemini API key — MUST be provided at runtime for Troice BYOK
     google_api_key:    Optional[str] = None
-
-    # Ollama settings
-    ollama_host: str  = "http://localhost:11434"
-    ollama_model:str  = "llama3"
 
     # Behaviour
     temperature:     float = 0.3     # Lower = more conservative/faithful
@@ -233,181 +208,6 @@ def _build_user_prompt(raw_text: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Provider Adapters
-# ─────────────────────────────────────────────────────────────────────────────
-
-class _MoonshotAdapter:
-    """
-    Adapter for Moonshot AI (Kimi) — OpenAI-compatible API.
-
-    Base URL : https://api.moonshot.ai/v1
-    Docs     : https://platform.moonshot.ai/docs
-
-    Available models:
-      kimi-k2.5              — best quality  (default)
-      kimi-k2-thinking-turbo — fast reasoning
-      kimi-k2-thinking       — deep reasoning
-      moonshot-v1-auto       — auto tier selection
-      moonshot-v1-128k       — 128 k context window
-      moonshot-v1-32k
-      moonshot-v1-8k         — fastest / lightest
-    """
-
-    MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1"
-
-    def __init__(self, config: EnhancerConfig):
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError(
-                "openai package is not installed. Run: pip install openai"
-            )
-        api_key = (
-            config.moonshot_api_key
-            or os.getenv("MOONSHOT_API_KEY")
-            or _MOONSHOT_API_KEY_DEFAULT
-        )
-        if not api_key:
-            raise ValueError(
-                "Moonshot API key not found. Set the MOONSHOT_API_KEY environment "
-                "variable or pass it via EnhancerConfig.moonshot_api_key.\n"
-                "Get a free key at: https://platform.moonshot.ai"
-            )
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url=self.MOONSHOT_BASE_URL,
-            timeout=config.timeout,
-        )
-        self.config = config
-
-    def complete(self, system: str, user: str) -> tuple[str, int]:
-        """Returns (text, tokens_used)."""
-        response = self.client.chat.completions.create(
-            model=self.config.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-        )
-        text   = response.choices[0].message.content.strip()
-        tokens = response.usage.total_tokens if response.usage else 0
-        return text, tokens
-
-    def stream(self, system: str, user: str) -> Generator[str, None, None]:
-        """Yield text chunks as they arrive."""
-        stream = self.client.chat.completions.create(
-            model=self.config.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-            stream=True,
-        )
-        for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
-
-
-class _OpenAIAdapter:
-    """Adapter for OpenAI Chat Completions API."""
-
-    def __init__(self, config: EnhancerConfig):
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError(
-                "openai package is not installed. Run: pip install openai"
-            )
-        api_key = config.openai_api_key or os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "OpenAI API key not found. Set the OPENAI_API_KEY environment "
-                "variable or pass it via EnhancerConfig.openai_api_key."
-            )
-        self.client = OpenAI(api_key=api_key, timeout=config.timeout)
-        self.config  = config
-
-    def complete(self, system: str, user: str) -> tuple[str, int]:
-        """Returns (text, tokens_used)."""
-        response = self.client.chat.completions.create(
-            model=self.config.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-        )
-        text   = response.choices[0].message.content.strip()
-        tokens = response.usage.total_tokens if response.usage else 0
-        return text, tokens
-
-    def stream(self, system: str, user: str) -> Generator[str, None, None]:
-        """Yield text chunks as they arrive."""
-        stream = self.client.chat.completions.create(
-            model=self.config.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-            stream=True,
-        )
-        for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
-
-
-class _AnthropicAdapter:
-    """Adapter for Anthropic Messages API."""
-
-    def __init__(self, config: EnhancerConfig):
-        try:
-            import anthropic
-        except ImportError:
-            raise ImportError(
-                "anthropic package is not installed. Run: pip install anthropic"
-            )
-        api_key = config.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "Anthropic API key not found. Set ANTHROPIC_API_KEY or pass via config."
-            )
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.config  = config
-
-    def complete(self, system: str, user: str) -> tuple[str, int]:
-        response = self.client.messages.create(
-            model=self.config.model,
-            max_tokens=self.config.max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            temperature=self.config.temperature,
-        )
-        text   = response.content[0].text.strip()
-        tokens = (response.usage.input_tokens + response.usage.output_tokens
-                  if response.usage else 0)
-        return text, tokens
-
-    def stream(self, system: str, user: str) -> Generator[str, None, None]:
-        with self.client.messages.stream(
-            model=self.config.model,
-            max_tokens=self.config.max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            temperature=self.config.temperature,
-        ) as stream:
-            for text in stream.text_stream:
-                yield text
-
-
 class _GoogleAdapter:
     """Adapter for Google Generative AI (Gemini)."""
 
@@ -422,7 +222,8 @@ class _GoogleAdapter:
         api_key = config.google_api_key or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError(
-                "Google API key not found. Set GOOGLE_API_KEY or pass via config."
+                "Google / Gemini API key not found. "
+                "Set GOOGLE_API_KEY or pass via EnhancerConfig.google_api_key."
             )
         genai.configure(api_key=api_key)
         gen_cfg = genai.types.GenerationConfig(
@@ -453,102 +254,25 @@ class _GoogleAdapter:
                 yield chunk.text
 
 
-class _OllamaAdapter:
-    """Adapter for Ollama (local inference server)."""
-
-    def __init__(self, config: EnhancerConfig):
-        try:
-            import requests
-            self._requests = requests
-        except ImportError:
-            raise ImportError(
-                "requests package not installed. Run: pip install requests"
-            )
-        self.host   = config.ollama_host.rstrip("/")
-        self.model  = config.ollama_model
-        self.config = config
-
-    def _post(self, payload: dict) -> dict:
-        url = f"{self.host}/api/chat"
-        r   = self._requests.post(url, json=payload, timeout=self.config.timeout)
-        r.raise_for_status()
-        return r.json()
-
-    def complete(self, system: str, user: str) -> tuple[str, int]:
-        payload = {
-            "model":  self.model,
-            "stream": False,
-            "options": {"temperature": self.config.temperature},
-            "messages": [
-                {"role": "system",  "content": system},
-                {"role": "user",    "content": user},
-            ],
-        }
-        data   = self._post(payload)
-        text   = data.get("message", {}).get("content", "").strip()
-        tokens = (
-            data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
-        )
-        return text, tokens
-
-    def stream(self, system: str, user: str) -> Generator[str, None, None]:
-        url     = f"{self.host}/api/chat"
-        payload = {
-            "model":  self.model,
-            "stream": True,
-            "options": {"temperature": self.config.temperature},
-            "messages": [
-                {"role": "system",  "content": system},
-                {"role": "user",    "content": user},
-            ],
-        }
-        with self._requests.post(
-            url, json=payload, stream=True, timeout=self.config.timeout
-        ) as r:
-            r.raise_for_status()
-            for line in r.iter_lines():
-                if line:
-                    try:
-                        data  = json.loads(line.decode("utf-8"))
-                        delta = data.get("message", {}).get("content", "")
-                        if delta:
-                            yield delta
-                    except json.JSONDecodeError:
-                        continue
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  Main Enhancer Class
 # ─────────────────────────────────────────────────────────────────────────────
 
 VALID_MODES = frozenset(MODE_PROMPTS.keys())
 
-_ADAPTER_MAP = {
-    "moonshot":  _MoonshotAdapter,
-    "openai":    _OpenAIAdapter,
-    "anthropic": _AnthropicAdapter,
-    "google":    _GoogleAdapter,
-    "ollama":    _OllamaAdapter,
-}
-
 
 class AITextEnhancer:
     """
     Main class for AI-powered voice transcription text enhancement.
 
-    Quick start (Moonshot/Kimi — default):
-        enhancer = AITextEnhancer()                          # uses MOONSHOT_API_KEY env var
+    Quick start:
+        enhancer = AITextEnhancer()                          # uses OPENAI_API_KEY env var
         result   = enhancer.enhance("um so the the thing is uh we need to uh fix this")
         print(result.enhanced_text)
 
-    Explicit Moonshot model:
+    Custom provider:
         enhancer = AITextEnhancer(
-            EnhancerConfig(provider="moonshot", model="kimi-k2-thinking")
-        )
-
-    Other providers:
-        enhancer = AITextEnhancer(
-            EnhancerConfig(provider="openai", model="gpt-4o")
+            EnhancerConfig(provider="anthropic", model="claude-3-5-sonnet-20241022")
         )
         result = enhancer.enhance(text, mode="formal")
     """
@@ -791,32 +515,13 @@ class AITextEnhancer:
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _build_adapter(self):
-        """Instantiate the correct provider adapter."""
-        provider = self.config.provider.lower()
-        cls = _ADAPTER_MAP.get(provider)
-        if cls is None:
+        """Instantiate the Gemini adapter (only provider supported)."""
+        if self.config.provider.lower() != "google":
             raise ValueError(
-                f"Unknown provider '{provider}'. "
-                f"Choose from: {', '.join(_ADAPTER_MAP.keys())}"
+                "Only Google / Gemini provider is supported in this build. "
+                "Set EnhancerConfig.provider='google'."
             )
-        # Apply provider-specific model defaults when the user hasn't overridden
-        _provider_defaults = {
-            "moonshot":  "kimi-k2.5",
-            "openai":    "gpt-4o",
-            "anthropic": "claude-3-5-sonnet-20241022",
-            "google":    "gemini-1.5-flash",
-            "ollama":    self.config.ollama_model,
-        }
-        if self.config.model in ("kimi-k2.5", "gpt-4o"):
-            # Only override if the model is still set to its original default
-            # and doesn't match the chosen provider's default
-            expected_default = _provider_defaults.get(provider)
-            if expected_default and self.config.model != expected_default:
-                # model was set for a different provider — use provider default
-                self.config.model = expected_default
-        if provider == "ollama" and self.config.model == "kimi-k2.5":
-            self.config.model = self.config.ollama_model
-        return cls(self.config)
+        return _GoogleAdapter(self.config)
 
     def _call_with_retry(
         self, system: str, user: str
@@ -852,37 +557,25 @@ class AITextEnhancer:
 #  Factory helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def create_enhancer(
-    provider: str = "openai",
-    model:    Optional[str] = None,
+def create_gemini_enhancer(
+    api_key: str,
+    model:    str = "gemini-1.5-flash",
     **kwargs,
 ) -> AITextEnhancer:
     """
-    Convenience factory for creating an AITextEnhancer with common providers.
+    Convenience factory for creating an AITextEnhancer **for Gemini only**.
 
     Args:
-        provider: "moonshot" | "openai" | "anthropic" | "google" | "ollama"
-        model:    Model name (uses sensible defaults per provider if None).
+        api_key: Your Google / Gemini API key (BYOK).
+        model:   Gemini model name (default: "gemini-1.5-flash").
         **kwargs: Additional keyword arguments forwarded to EnhancerConfig.
-
-    Examples:
-        enhancer = create_enhancer()                                         # Moonshot kimi-k2.5
-        enhancer = create_enhancer("moonshot", model="kimi-k2-thinking")
-        enhancer = create_enhancer("moonshot", model="moonshot-v1-128k")     # long audio
-        enhancer = create_enhancer("openai")
-        enhancer = create_enhancer("anthropic", model="claude-3-5-sonnet-20241022")
-        enhancer = create_enhancer("ollama", ollama_model="mistral")
-        enhancer = create_enhancer("google", model="gemini-1.5-flash")
     """
-    _defaults = {
-        "moonshot":  "kimi-k2.5",
-        "openai":    "gpt-4o",
-        "anthropic": "claude-3-5-sonnet-20241022",
-        "google":    "gemini-1.5-flash",
-        "ollama":    kwargs.get("ollama_model", "llama3"),
-    }
-    resolved_model = model or _defaults.get(provider, "gpt-4o")
-    cfg = EnhancerConfig(provider=provider, model=resolved_model, **kwargs)
+    cfg = EnhancerConfig(
+        provider="google",
+        model=model,
+        google_api_key=api_key,
+        **kwargs,
+    )
     return AITextEnhancer(cfg)
 
 
@@ -935,7 +628,6 @@ def _print_demo_result(result: EnhancementResult) -> None:
 
 
 def demo(
-    provider: str = "openai",
     model:    Optional[str] = None,
     modes:    Optional[list[str]] = None,
     sample:   str = "meeting",
@@ -944,8 +636,7 @@ def demo(
     Run a quick demo of the AITextEnhancer.
 
     Args:
-        provider: AI provider to use.
-        model:    Model name (uses provider default if None).
+        model:    Gemini model name (defaults to gemini-1.5-flash).
         modes:    List of modes to test (defaults to ["clean", "enhance", "bullets"]).
         sample:   Which sample transcription to use: "meeting" | "technical" | "casual"
     """
@@ -956,12 +647,17 @@ def demo(
     raw_text  = SAMPLE_TRANSCRIPTIONS.get(sample, SAMPLE_TRANSCRIPTIONS["meeting"])
     test_modes = modes or ["clean", "enhance", "bullets"]
 
-    print(f"\nProvider : {provider}")
+    print(f"\nProvider : google (Gemini)")
     print(f"Sample   : {sample}")
     print(f"Modes    : {', '.join(test_modes)}")
 
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("\n[ERROR] GOOGLE_API_KEY environment variable is not set.")
+        return
+
     try:
-        enhancer = create_enhancer(provider=provider, model=model)
+        enhancer = create_gemini_enhancer(api_key=api_key, model=model or "gemini-1.5-flash")
     except (ImportError, ValueError) as e:
         print(f"\n[ERROR] Could not initialise enhancer: {e}")
         return
@@ -984,21 +680,15 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python ai_text_enhancer.py                                              # Moonshot kimi-k2.5
-  python ai_text_enhancer.py --provider moonshot --model kimi-k2.5
-  python ai_text_enhancer.py --provider moonshot --model kimi-k2-thinking
-  python ai_text_enhancer.py --provider moonshot --model moonshot-v1-128k
-  python ai_text_enhancer.py --provider openai --model gpt-4o
-  python ai_text_enhancer.py --provider anthropic --model claude-3-5-sonnet-20241022
-  python ai_text_enhancer.py --provider ollama --model llama3
-  python ai_text_enhancer.py --provider google --model gemini-1.5-flash
+  # Use default Gemini 1.5 Flash (GOOGLE_API_KEY env var required)
+  python ai_text_enhancer.py
+
+  # Explicit model
+  python ai_text_enhancer.py --model gemini-1.5-flash
+
+  # Multiple modes
   python ai_text_enhancer.py --modes enhance formal meeting_notes --sample technical
         """
-    )
-    parser.add_argument(
-        "--provider", default="moonshot",
-        choices=list(_ADAPTER_MAP.keys()),
-        help="AI provider to use (default: moonshot)"
     )
     parser.add_argument(
         "--model", default=None,
@@ -1026,9 +716,7 @@ Examples:
             print(f"  {m:<15} — {MODE_PROMPTS[m][:80]}...")
     else:
         demo(
-            provider=args.provider,
             model=args.model,
             modes=args.modes,
             sample=args.sample,
         )
-

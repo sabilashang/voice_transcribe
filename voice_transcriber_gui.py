@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 from voice_transcriber import VoiceTranscriber
 from speaker_detector import SpeakerDetector
 from audio_processor import AudioProcessor
+from ai_text_enhancer import AITextEnhancer, EnhancerConfig
 
 # ─────────────────────────────────────────────────────────────────
 #  Theme — Dark Premium Palette
@@ -145,6 +146,9 @@ class VoiceTranscriberGUI(ctk.CTk):
         self.profile_file_var = tk.StringVar()
         self.identify_file_var= tk.StringVar()
         self.max_speakers_var = tk.StringVar(value="5")
+        # AI enhancement (Gemini BYOK)
+        self.ai_model_var     = tk.StringVar(value="")
+        self.ai_api_key_var   = tk.StringVar()
 
         # Build
         self._build_ui()
@@ -504,6 +508,15 @@ class VoiceTranscriberGUI(ctk.CTk):
         )
         self.btn_clear_out.pack(side="left", padx=(0, 6))
 
+        # AI enhancement button (Gemini)
+        self.btn_ai_enhance = ctk.CTkButton(
+            out_btn_frame, text="✨ Enhance with AI", width=130, height=30,
+            corner_radius=6, fg_color=PURPLE, hover_color="#C9A8FF",
+            text_color=WHITE, font=_f(11, "bold"),
+            command=self.enhance_output_with_ai,
+        )
+        self.btn_ai_enhance.pack(side="left", padx=(0, 6))
+
         self.btn_export = ctk.CTkButton(
             out_btn_frame, text="↓ Export", width=74, height=30,
             corner_radius=6, fg_color=ACCENT, hover_color=ACC_H,
@@ -801,9 +814,59 @@ class VoiceTranscriberGUI(ctk.CTk):
             font=_f(11), text_color=TEXT3
         ).pack(anchor="w", pady=(8, 0))
 
+        # ─ AI Enhancement (Gemini 1.5 Flash, BYOK) ─────────────
+        ai_card = _card(body, "✨  AI ENHANCEMENT (GEMINI)", title_color=PURPLE)
+        ai_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+
+        ai_inner = ctk.CTkFrame(ai_card, fg_color="transparent")
+        ai_inner.pack(fill="x", padx=16, pady=(0, 16))
+
+        # Model selector (required before using Troice)
+        ctk.CTkLabel(
+            ai_inner,
+            text="AI model (required before uploading audio)",
+            font=_f(12), text_color=TEXT2
+        ).pack(anchor="w")
+        self.ai_model_combo = ctk.CTkComboBox(
+            ai_inner,
+            values=["gemini-1.5-flash"],
+            variable=self.ai_model_var,
+            width=260, height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            button_color=SURFACE3, button_hover_color=BORDER2,
+            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
+            text_color=TEXT, dropdown_text_color=TEXT,
+            font=_f(13),
+        )
+        self.ai_model_combo.pack(anchor="w", pady=(4, 10))
+
+        # API key entry (BYOK)
+        ctk.CTkLabel(
+            ai_inner,
+            text="Gemini API key (BYOK)",
+            font=_f(12), text_color=TEXT2
+        ).pack(anchor="w")
+        self.ai_api_key_entry = ctk.CTkEntry(
+            ai_inner,
+            textvariable=self.ai_api_key_var,
+            placeholder_text="Paste your Google Gemini API key…",
+            height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            text_color=TEXT, placeholder_text_color=TEXT3,
+            font=_f(13),
+            show="*",
+        )
+        self.ai_api_key_entry.pack(fill="x", pady=(4, 4))
+
+        ctk.CTkLabel(
+            ai_inner,
+            text="ⓘ  Your key is used locally by Troice only. It is not stored or sent anywhere else.",
+            font=_f(11), text_color=TEXT3, wraplength=520, justify="left"
+        ).pack(anchor="w", pady=(4, 0))
+
         # ─ Presets section ──────────────────────────────────
         preset_card = _card(body, "⚡  QUICK PRESETS", title_color=ACCENT)
-        preset_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+        preset_card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 14))
 
         presets_inner = ctk.CTkFrame(preset_card, fg_color="transparent")
         presets_inner.pack(fill="x", padx=16, pady=(0, 16))
@@ -835,7 +898,7 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         # ─ Save / Load ──────────────────────────────────────
         save_card = _card(body, "💾  PROFILE MANAGEMENT", title_color=GREEN)
-        save_card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 28))
+        save_card.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 28))
 
         save_inner = ctk.CTkFrame(save_card, fg_color="transparent")
         save_inner.pack(fill="x", padx=16, pady=(0, 16))
@@ -998,6 +1061,9 @@ class VoiceTranscriberGUI(ctk.CTk):
             self._show_toast("Already recording", "orange")
             return
 
+        if not self._ensure_ai_configured():
+            return
+
         self.btn_record.configure(state="disabled")
         self.btn_pause.configure(state="normal")
         self.btn_stop.configure(state="normal")
@@ -1092,6 +1158,8 @@ class VoiceTranscriberGUI(ctk.CTk):
     # ─────────────────────────────────────────────────────────────
 
     def browse_file(self):
+        if not self._ensure_ai_configured():
+            return
         path = filedialog.askopenfilename(
             title="Select Audio File",
             filetypes=[
@@ -1123,6 +1191,8 @@ class VoiceTranscriberGUI(ctk.CTk):
                 text=f"📄  {os.path.basename(path)}", text_color=TEXT2)
 
     def add_another_file(self):
+        if not self._ensure_ai_configured():
+            return
         paths = filedialog.askopenfilenames(
             title="Add Audio Files to Queue",
             filetypes=[
@@ -1140,6 +1210,8 @@ class VoiceTranscriberGUI(ctk.CTk):
             self._show_toast(f"{len(self.file_queue)} files queued", "blue")
 
     def transcribe_file(self):
+        if not self._ensure_ai_configured():
+            return
         files = self.file_queue.copy() if self.file_queue else (
             [self.file_path_var.get()] if self.file_path_var.get() else [])
 
@@ -1461,7 +1533,9 @@ class VoiceTranscriberGUI(ctk.CTk):
         settings = {
             "language": self.language_var.get(),
             "engine": self.engine_var.get(),
-            "sample_rate": self.sample_rate_var.get()
+            "sample_rate": self.sample_rate_var.get(),
+            "ai_model": self.ai_model_var.get(),
+            # API key is BYOK; we do NOT persist it to disk for safety.
         }
         try:
             with open("settings.json", "w") as f:
@@ -1478,6 +1552,12 @@ class VoiceTranscriberGUI(ctk.CTk):
                 lang   = s.get("language", "en-US")
                 engine = s.get("engine",   "google")
                 sr_    = str(s.get("sample_rate", "16000"))
+                # Restore AI model selection if present
+                self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
+                try:
+                    self.ai_model_combo.set(self.ai_model_var.get())
+                except Exception:
+                    pass
                 self._apply_preset(lang, engine, sr_)
                 self._show_toast("Settings loaded!", "green")
             else:
@@ -1493,10 +1573,75 @@ class VoiceTranscriberGUI(ctk.CTk):
                 self.language_var.set(s.get("language", "en-US"))
                 self.engine_var.set(s.get("engine", "google"))
                 self.sample_rate_var.set(str(s.get("sample_rate", "16000")))
+                self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
+                try:
+                    if hasattr(self, "ai_model_combo"):
+                        self.ai_model_combo.set(self.ai_model_var.get())
+                except Exception:
+                    pass
                 self.transcriber.set_language(s.get("language", "en-US"))
                 self.transcriber.set_engine(s.get("engine", "google"))
         except Exception:
             pass
+
+    # ─────────────────────────────────────────────────────────────
+    #  AI enhancement helpers (Gemini 1.5 Flash BYOK)
+    # ─────────────────────────────────────────────────────────────
+
+    def _ensure_ai_configured(self) -> bool:
+        """Ensure an AI model and API key are set before audio is used."""
+        model = (self.ai_model_var.get() or "").strip()
+        key = (self.ai_api_key_var.get() or "").strip()
+        if not model:
+            self._show_toast("Please select an AI model before using Troice.", "orange")
+            self.update_status("AI model required before uploading audio", ORANGE, ORANGE)
+            return False
+        if not key:
+            self._show_toast("Please enter your Gemini API key (BYOK).", "orange")
+            self.update_status("Gemini API key required (BYOK)", ORANGE, ORANGE)
+            return False
+        return True
+
+    def enhance_output_with_ai(self):
+        """Enhance the current transcription text using Gemini 1.5 Flash."""
+        if not self._ensure_ai_configured():
+            return
+
+        raw = self.results_box.get("1.0", "end").strip()
+        if not raw:
+            self._show_toast("No text to enhance yet.", "orange")
+            return
+
+        self.btn_ai_enhance.configure(state="disabled", text="⏳ Enhancing…")
+        self.update_status("Enhancing text with Gemini…", BLUE, BLUE)
+
+        def _thread():
+            try:
+                cfg = EnhancerConfig(
+                    provider="google",
+                    model=(self.ai_model_var.get() or "gemini-1.5-flash").strip(),
+                    google_api_key=(self.ai_api_key_var.get() or "").strip(),
+                )
+                enhancer = AITextEnhancer(cfg)
+                result = enhancer.enhance(raw_text=raw, mode="enhance")
+                enhanced = result.enhanced_text or raw
+
+                self.after(0, lambda: self._write_output(enhanced, append=False))
+                self.after(0, lambda: self._show_toast("AI enhancement complete!", "green"))
+                self.update_status("AI enhancement complete ✓", GREEN, GREEN)
+            except Exception as e:
+                logger.error(f"AI enhancement error: {e}")
+                self.after(0, lambda: self._show_toast(f"AI error: {e}", "red"))
+                self.update_status(f"AI error: {e}", RED, RED)
+            finally:
+                self.after(
+                    0,
+                    lambda: self.btn_ai_enhance.configure(
+                        state="normal", text="✨ Enhance with AI"
+                    ),
+                )
+
+        threading.Thread(target=_thread, daemon=True).start()
 
     def _load_speaker_profiles(self):
         try:
