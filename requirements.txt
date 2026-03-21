@@ -26,6 +26,9 @@ torchaudio==2.1.2
 tkinter-tooltip==2.0.0
 customtkinter==5.2.2
 
+# AI Enhancement (Gemini BYOK)
+google-generativeai>=0.7.0
+
 # File Handling and Utilities
 python-dotenv==1.0.0
 tqdm==4.66.1

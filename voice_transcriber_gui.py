@@ -1,8 +1,12 @@
 """
 Troice — Voice Transcriber & Speaker Detection
-Light UI — Emerald / off-white theme
+Premium dark-mode UI — Complete Redesign
 """
 
+from ai_text_enhancer import AITextEnhancer, EnhancerConfig
+from audio_processor import AudioProcessor
+from speaker_detector import SpeakerDetector
+from voice_transcriber import VoiceTranscriber
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
@@ -17,50 +21,43 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from voice_transcriber import VoiceTranscriber
-from speaker_detector import SpeakerDetector
-from audio_processor import AudioProcessor
-from ai_text_enhancer import AITextEnhancer, EnhancerConfig
 
 # ─────────────────────────────────────────────────────────────────
-#  Theme — Light Emerald / Off-White (Spotify-style soft green)
+#  Theme — Dark Premium Palette
 # ─────────────────────────────────────────────────────────────────
-ctk.set_appearance_mode("light")
-ctk.set_default_color_theme("green")
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
-# Backgrounds — off-white and lightest emerald tints
-BG        = "#F7FBF8"   # off-white, hint of mint
-SURFACE   = "#EFF8F2"   # very light emerald
-SURFACE2  = "#E5F4EC"   # light emerald
-SURFACE3  = "#D9EFE2"   # soft emerald
+# Backgrounds
+BG = "#0D1117"
+SURFACE = "#161B22"
+SURFACE2 = "#21262D"
+SURFACE3 = "#2D333B"
 
-# Borders — soft gray-green
-BORDER    = "#C8E6D4"
-BORDER2   = "#B5DCC8"
+# Borders
+BORDER = "#30363D"
+BORDER2 = "#444C56"
 
-# Accents — emerald green (Spotify-inspired, soft)
-ACCENT    = "#10B981"   # emerald-500
-ACC_H     = "#34D399"   # emerald-400 hover
-GREEN     = "#059669"   # emerald-600 success
-GREEN_H   = "#10B981"
-RED       = "#DC2626"   # soft red for record
-RED_H     = "#EF4444"
-ORANGE    = "#D97706"   # amber for pause/warning
-BLUE      = "#0284C7"   # sky blue
-PURPLE    = "#7C3AED"   # violet
-TEAL      = "#0D9488"
+# Accents
+ACCENT = "#6E76FF"   # indigo-purple
+ACC_H = "#818CF8"
+GREEN = "#3FB950"
+GREEN_H = "#4ADE80"
+RED = "#F85149"
+RED_H = "#FF6B63"
+ORANGE = "#E3B341"
+BLUE = "#58A6FF"
+PURPLE = "#BC8CFF"
+TEAL = "#39D0D8"
 
-# Text — dark on light
-TEXT      = "#1C1917"   # warm dark
-TEXT2     = "#57534E"   # stone-600
-TEXT3     = "#78716C"   # stone-500
-WHITE     = "#FFFFFF"
+# Text
+TEXT = "#E6EDF3"
+TEXT2 = "#8B949E"
+TEXT3 = "#484F58"
+WHITE = "#FFFFFF"
 
 # Valid recognition engines (no legacy engines)
 VALID_ENGINES = ["google", "azure", "bing"]
-
-# Settings file path
-SETTINGS_PATH = "settings.json"
 
 
 def _f(size, weight="normal", family="Segoe UI"):
@@ -79,20 +76,22 @@ def _divider(parent, **grid_kw):
 
 
 def _label(parent, text, size=13, weight="normal", color=TEXT, **pack_kw):
-    lbl = ctk.CTkLabel(parent, text=text, font=_f(size, weight), text_color=color)
+    lbl = ctk.CTkLabel(parent, text=text, font=_f(
+        size, weight), text_color=color)
     if pack_kw:
         lbl.pack(**pack_kw)
     return lbl
 
 
 def _card(parent, title=None, title_color=TEXT2, padx=16, pady_inner=12):
-    """Rounded light surface card with optional title."""
+    """Rounded dark surface card with optional title."""
     outer = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=12,
                          border_width=1, border_color=BORDER)
     if title:
         hdr = ctk.CTkFrame(outer, fg_color="transparent")
         hdr.pack(fill="x", padx=padx, pady=(pady_inner, 4))
-        ctk.CTkLabel(hdr, text=title, font=_f(12, "bold"), text_color=title_color).pack(side="left")
+        ctk.CTkLabel(hdr, text=title, font=_f(12, "bold"),
+                     text_color=title_color).pack(side="left")
         _sep = ctk.CTkFrame(outer, fg_color=BORDER, height=1, corner_radius=0)
         _sep.pack(fill="x", padx=padx, pady=(0, pady_inner))
     return outer
@@ -124,160 +123,63 @@ class VoiceTranscriberGUI(ctk.CTk):
         self.configure(fg_color=BG)
 
         # Backend
-        self.transcriber      = VoiceTranscriber()
+        self.transcriber = VoiceTranscriber()
         self.speaker_detector = SpeakerDetector()
-        self.audio_processor  = AudioProcessor()
+        self.audio_processor = AudioProcessor()
 
         # State
-        self.is_recording         = False
-        self.is_paused            = False
-        self.cont_rec_active      = False
-        self.current_file         = None
-        self.file_queue           = []
-        self._rec_start_time      = None
-        self._timer_id            = None
-        self._pulse_id            = None
-        self._pulse_state         = False
-        self._active_page         = "transcribe"
-        self._toast_widget        = None
-        self._toast_after_id      = None
-        self._live_center_active  = False
-        self._live_center_job     = None
-        self._live_center_value   = 0.0
+        self.is_recording = False
+        self.is_paused = False
+        self.cont_rec_active = False
+        self.current_file = None
+        self.file_queue = []
+        self._rec_start_time = None
+        self._timer_id = None
+        self._pulse_id = None
+        self._pulse_state = False
+        self._active_page = "transcribe"
+        self._toast_widget = None
+        self._toast_after_id = None
+        self._live_center_active = False
+        self._live_center_job = None
+        self._live_center_value = 0.0
 
         # StringVars
-        self.file_path_var    = tk.StringVar()
-        self.language_var     = tk.StringVar(value="en-US")
-        self.engine_var       = tk.StringVar(value="google")
-        self.sample_rate_var  = tk.StringVar(value="16000")
+        self.file_path_var = tk.StringVar()
+        self.language_var = tk.StringVar(value="en-US")
+        self.engine_var = tk.StringVar(value="google")
+        self.sample_rate_var = tk.StringVar(value="16000")
         self.speaker_file_var = tk.StringVar()
         self.profile_name_var = tk.StringVar()
         self.profile_file_var = tk.StringVar()
-        self.identify_file_var= tk.StringVar()
+        self.identify_file_var = tk.StringVar()
         self.max_speakers_var = tk.StringVar(value="5")
         # AI enhancement (Gemini BYOK)
-        self.ai_model_var     = tk.StringVar(value="gemini-1.5-flash")
-        self.ai_api_key_var   = tk.StringVar()
+        self.ai_model_var = tk.StringVar(value="gemini-1.5-flash")
+        self.ai_api_key_var = tk.StringVar()
 
-        # Load persisted settings into vars (before UI, so we know if we have API key)
-        self._load_settings_into_vars()
-
-        # Build UI (onboarding + main app)
+        # Build
         self._build_ui()
         self._load_speaker_profiles()
-        # Sync combos with vars (e.g. engine always valid)
+        self._load_settings_silent()
         self._sync_engine_combos()
-        # Show setup wizard if no API key, else main app
-        self._decide_initial_view()
 
     # ── UI Construction ───────────────────────────────────────────
 
     def _build_ui(self):
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=0)
-        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
 
-        # Content area: either setup wizard or main app
-        self._content = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
-        self._content.grid(row=0, column=0, columnspan=2, sticky="nsew")
-        self._content.grid_rowconfigure(0, weight=1)
-        self._content.grid_columnconfigure(0, weight=1)
-
-        # Setup wizard (step 1: API key)
-        self._setup_frame = ctk.CTkFrame(self._content, fg_color=BG)
-        self._setup_frame.grid(row=0, column=0, sticky="nsew")
-        self._setup_frame.grid_rowconfigure(0, weight=1)
-        self._setup_frame.grid_columnconfigure(0, weight=1)
-        self._build_setup_wizard()
-
-        # Main app (sidebar + main area) — created now, shown later via _show_main
-        self._main_frame = ctk.CTkFrame(self._content, fg_color=BG)
-        self._main_frame.grid_rowconfigure(0, weight=1)
-        self._main_frame.grid_columnconfigure(0, weight=0)
-        self._main_frame.grid_columnconfigure(1, weight=1)
-        self._build_sidebar(self._main_frame)
-        self._build_main(self._main_frame)
-
+        self._build_sidebar()
+        self._build_main()
         self._build_statusbar()
-
-    # ── Setup wizard ───────────────────────────────────────────────
-
-    def _build_setup_wizard(self):
-        center = ctk.CTkFrame(self._setup_frame, fg_color="transparent")
-        center.grid(row=0, column=0, sticky="nswe")
-        center.grid_rowconfigure(0, weight=1)
-        center.grid_columnconfigure(0, weight=1)
-
-        card = ctk.CTkFrame(center, fg_color=SURFACE, corner_radius=16,
-                            border_width=1, border_color=BORDER, width=420)
-        card.grid(row=0, column=0)
-        card.grid_propagate(False)
-        card.grid_rowconfigure(4, weight=1)
-        card.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(card, text="🎤", font=_f(40), text_color=TEXT).grid(
-            row=0, column=0, pady=(32, 8))
-        ctk.CTkLabel(card, text="Welcome to Troice",
-                     font=_f(22, "bold"), text_color=TEXT).grid(
-            row=1, column=0, padx=32, pady=(0, 4))
-        ctk.CTkLabel(card, text="Voice transcription made simple.\nOne step to get started.",
-                     font=_f(13), text_color=TEXT2, justify="center").grid(
-            row=2, column=0, padx=32, pady=(0, 24))
-
-        ctk.CTkLabel(card, text="Gemini API key",
-                     font=_f(12, "bold"), text_color=TEXT2).grid(
-            row=3, column=0, sticky="w", padx=32, pady=(0, 6))
-        self._setup_api_entry = ctk.CTkEntry(
-            card, textvariable=self.ai_api_key_var,
-            placeholder_text="Paste your key (saved locally)",
-            height=44, corner_radius=10,
-            fg_color=SURFACE2, border_color=BORDER, border_width=1,
-            text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13),
-            show="*"
-        )
-        self._setup_api_entry.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 12))
-        ctk.CTkLabel(card, text="Get a key: Google AI Studio",
-                     font=_f(11), text_color=BLUE, cursor="hand2").grid(
-            row=5, column=0, pady=(0, 20))
-
-        btn = ctk.CTkButton(
-            card, text="Save & open Troice",
-            height=44, corner_radius=10,
-            fg_color=ACCENT, hover_color=ACC_H, text_color=WHITE,
-            font=_f(14, "bold"), command=self._on_setup_complete
-        )
-        btn.grid(row=6, column=0, padx=32, pady=(0, 32))
-
-    def _on_setup_complete(self):
-        key = (self.ai_api_key_var.get() or "").strip()
-        if not key:
-            self._show_toast("Please enter your Gemini API key.", "orange")
-            return
-        self._persist_settings()
-        self._show_main()
-
-    def _show_setup(self):
-        self._setup_frame.grid()
-        self._main_frame.grid_remove()
-        if hasattr(self, "statusbar"):
-            self.statusbar.grid_remove()
-
-    def _show_main(self):
-        self._setup_frame.grid_remove()
-        self._main_frame.grid()
-        if hasattr(self, "statusbar"):
-            self.statusbar.grid(row=1, column=0, sticky="ew")
-
-    def _decide_initial_view(self):
-        if (self.ai_api_key_var.get() or "").strip():
-            self._show_main()
-        else:
-            self._show_setup()
 
     # ── Sidebar ───────────────────────────────────────────────────
 
-    def _build_sidebar(self, parent):
-        sb = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=0, width=226)
+    def _build_sidebar(self):
+        sb = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, width=226)
         sb.grid(row=0, column=0, sticky="ns")
         sb.grid_propagate(False)
         sb.grid_rowconfigure(5, weight=1)
@@ -341,7 +243,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         footer.grid(row=6, column=0, sticky="sew", padx=20, pady=20)
         ctk.CTkLabel(footer, text="v2.0 · Premium Edition",
                      font=_f(10), text_color=TEXT3).pack(anchor="w")
-        ctk.CTkLabel(footer, text="Light theme",
+        ctk.CTkLabel(footer, text="Dark Theme",
                      font=_f(10), text_color=TEXT3).pack(anchor="w")
 
     # ── Navigation switch ─────────────────────────────────────────
@@ -358,8 +260,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
     # ── Main container ────────────────────────────────────────────
 
-    def _build_main(self, parent):
-        self.main_area = ctk.CTkFrame(parent, fg_color=BG, corner_radius=0)
+    def _build_main(self):
+        self.main_area = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         self.main_area.grid(row=0, column=1, sticky="nsew")
         self.main_area.grid_rowconfigure(0, weight=1)
         self.main_area.grid_columnconfigure(0, weight=1)
@@ -374,25 +276,26 @@ class VoiceTranscriberGUI(ctk.CTk):
 
     def _build_statusbar(self):
         bar = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, height=46)
-        bar.grid(row=1, column=0, sticky="ew")
+        bar.grid(row=1, column=0, columnspan=2, sticky="ew")
         bar.grid_propagate(False)
         bar.grid_columnconfigure(1, weight=1)
         self.statusbar = bar
 
         # Dot
-        self._status_dot = ctk.CTkLabel(bar, text="●", font=_f(12), text_color=GREEN)
+        self._status_dot = ctk.CTkLabel(
+            bar, text="●", font=_f(12), text_color=GREEN)
         self._status_dot.grid(row=0, column=0, padx=(16, 6), pady=13)
 
         # Message
         self._status_text = ctk.CTkLabel(bar, text="Ready to transcribe",
-                                          font=_f(12), text_color=TEXT2, anchor="w")
+                                         font=_f(12), text_color=TEXT2, anchor="w")
         self._status_text.grid(row=0, column=1, sticky="w")
 
         # Progress
         self._progress_bar = ctk.CTkProgressBar(bar, height=4, width=180,
-                                                  corner_radius=2,
-                                                  fg_color=SURFACE2,
-                                                  progress_color=ACCENT)
+                                                corner_radius=2,
+                                                fg_color=SURFACE2,
+                                                progress_color=ACCENT)
         self._progress_bar.set(0)
         self._progress_bar.grid(row=0, column=2, padx=16, pady=14)
         self._progress_bar.grid_remove()
@@ -400,8 +303,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Recording timer (right side)
         self._rec_timer_var = tk.StringVar(value="")
         self._rec_timer_disp = ctk.CTkLabel(bar, textvariable=self._rec_timer_var,
-                                             font=_f(13, family="Consolas"),
-                                             text_color=RED)
+                                            font=_f(13, family="Consolas"),
+                                            text_color=RED)
         self._rec_timer_disp.grid(row=0, column=3, padx=(0, 16), pady=13)
 
     # ─────────────────────────────────────────────────────────────
@@ -418,7 +321,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         # ── Top header bar ────────────────────────────────────
         hdr = ctk.CTkFrame(page, fg_color="transparent")
-        hdr.grid(row=0, column=0, columnspan=2, sticky="ew", padx=28, pady=(24, 16))
+        hdr.grid(row=0, column=0, columnspan=2,
+                 sticky="ew", padx=28, pady=(24, 16))
         hdr.grid_columnconfigure(0, weight=0)
         hdr.grid_columnconfigure(1, weight=1)
 
@@ -439,10 +343,11 @@ class VoiceTranscriberGUI(ctk.CTk):
         rec_inner.pack(padx=14, pady=10)
 
         # Recording dot + status
-        self._rec_dot = ctk.CTkLabel(rec_inner, text="●", font=_f(13), text_color=TEXT3)
+        self._rec_dot = ctk.CTkLabel(
+            rec_inner, text="●", font=_f(13), text_color=TEXT3)
         self._rec_dot.pack(side="left", padx=(0, 6))
         self._rec_status_lbl = ctk.CTkLabel(rec_inner, text="Microphone ready",
-                                             font=_f(12), text_color=TEXT2)
+                                            font=_f(12), text_color=TEXT2)
         self._rec_status_lbl.pack(side="left", padx=(0, 18))
 
         # Record button
@@ -470,8 +375,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         # ── Two-column body ───────────────────────────────────
         # Left: controls
         left = ctk.CTkScrollableFrame(page, fg_color=BG, corner_radius=0,
-                                       scrollbar_button_color=SURFACE2,
-                                       scrollbar_button_hover_color=SURFACE3)
+                                      scrollbar_button_color=SURFACE2,
+                                      scrollbar_button_hover_color=SURFACE3)
         left.grid(row=1, column=0, sticky="nsew", padx=(28, 12), pady=(0, 20))
         left.grid_columnconfigure(0, weight=1)
 
@@ -507,7 +412,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Language
         lang_grp = ctk.CTkFrame(opt_row, fg_color="transparent")
         lang_grp.pack(side="left", padx=(0, 18))
-        ctk.CTkLabel(lang_grp, text="Language", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        ctk.CTkLabel(lang_grp, text="Language", font=_f(
+            11), text_color=TEXT2).pack(anchor="w")
         self.lang_combo = ctk.CTkComboBox(
             lang_grp,
             values=["en-US", "en-GB", "es-ES", "fr-FR", "de-DE",
@@ -525,10 +431,11 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Engine
         eng_grp = ctk.CTkFrame(opt_row, fg_color="transparent")
         eng_grp.pack(side="left", padx=(0, 18))
-        ctk.CTkLabel(eng_grp, text="Engine", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        ctk.CTkLabel(eng_grp, text="Engine", font=_f(
+            11), text_color=TEXT2).pack(anchor="w")
         self.engine_combo = ctk.CTkComboBox(
             eng_grp,
-            values=["google"],
+            values=["google", "azure", "bing"],
             variable=self.engine_var,
             width=128, height=36, corner_radius=8,
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
@@ -550,7 +457,8 @@ class VoiceTranscriberGUI(ctk.CTk):
             text_color=WHITE, font=_f(14, "bold"),
             command=self.transcribe_file
         )
-        self.btn_transcribe.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.btn_transcribe.pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
 
         self.btn_add_file = _icon_btn(
             act_row, "➕ Queue", 90, height=42,
@@ -569,16 +477,18 @@ class VoiceTranscriberGUI(ctk.CTk):
         tips_card.pack(fill="x", pady=(0, 14))
 
         tips = [
-            ("🎤", "Clear audio gives best accuracy"),
-            ("📁", "WAV, MP3, M4A, FLAC, OGG, AAC"),
-            ("⚡", "Large files are chunked automatically"),
+            ("🎤", "Use clear, noise-free audio for best accuracy"),
+            ("📁", "Supports WAV, MP3, M4A, FLAC, OGG, AAC"),
+            ("🌐", "Google engine requires internet connection"),
+            ("⚡", "Large files are auto-chunked for reliability"),
         ]
         tips_inner = ctk.CTkFrame(tips_card, fg_color="transparent")
         tips_inner.pack(fill="x", padx=16, pady=(0, 14))
         for icon, tip in tips:
             row = ctk.CTkFrame(tips_inner, fg_color="transparent")
             row.pack(fill="x", pady=2)
-            ctk.CTkLabel(row, text=icon, font=_f(13), width=24).pack(side="left")
+            ctk.CTkLabel(row, text=icon, font=_f(
+                13), width=24).pack(side="left")
             ctk.CTkLabel(row, text=tip, font=_f(12), text_color=TEXT2,
                          wraplength=300, justify="left").pack(side="left", padx=(6, 0))
 
@@ -664,11 +574,12 @@ class VoiceTranscriberGUI(ctk.CTk):
         stats.grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
         self._words_lbl = ctk.CTkLabel(stats, text="0 words",
-                                        font=_f(11), text_color=TEXT3)
+                                       font=_f(11), text_color=TEXT3)
         self._words_lbl.pack(side="left")
-        ctk.CTkLabel(stats, text=" · ", font=_f(11), text_color=TEXT3).pack(side="left")
+        ctk.CTkLabel(stats, text=" · ", font=_f(
+            11), text_color=TEXT3).pack(side="left")
         self._chars_lbl = ctk.CTkLabel(stats, text="0 characters",
-                                        font=_f(11), text_color=TEXT3)
+                                       font=_f(11), text_color=TEXT3)
         self._chars_lbl.pack(side="left")
 
     # ─────────────────────────────────────────────────────────────
@@ -677,7 +588,7 @@ class VoiceTranscriberGUI(ctk.CTk):
 
     def _build_speakers_page(self):
         page = ctk.CTkScrollableFrame(self.main_area, fg_color=BG, corner_radius=0,
-                                       scrollbar_button_color=SURFACE2)
+                                      scrollbar_button_color=SURFACE2)
         page.grid(row=0, column=0, sticky="nsew")
         page.grid_columnconfigure(0, weight=1)
         page.grid_remove()
@@ -686,7 +597,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Page header
         pg_hdr = ctk.CTkFrame(page, fg_color="transparent")
         pg_hdr.grid(row=0, column=0, sticky="ew", padx=28, pady=(24, 16))
-        ctk.CTkLabel(pg_hdr, text="Speakers", font=_f(24, "bold"), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(pg_hdr, text="Speakers", font=_f(
+            24, "bold"), text_color=TEXT).pack(side="left")
         ctk.CTkLabel(pg_hdr, text="  / Detect & manage speaker profiles",
                      font=_f(13), text_color=TEXT3).pack(side="left", pady=(4, 0))
 
@@ -698,12 +610,14 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         # ─ Detect Speakers ──────────────────────────────────
         detect_card = _card(body, "🔍  DETECT SPEAKERS", title_color=BLUE)
-        detect_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 14))
+        detect_card.grid(row=0, column=0, sticky="nsew",
+                         padx=(0, 10), pady=(0, 14))
 
         dc_inner = ctk.CTkFrame(detect_card, fg_color="transparent")
         dc_inner.pack(fill="x", padx=16, pady=(0, 16))
 
-        ctk.CTkLabel(dc_inner, text="Audio file", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        ctk.CTkLabel(dc_inner, text="Audio file", font=_f(
+            11), text_color=TEXT2).pack(anchor="w")
         sp_file_row = ctk.CTkFrame(dc_inner, fg_color="transparent")
         sp_file_row.pack(fill="x", pady=(4, 10))
 
@@ -714,14 +628,16 @@ class VoiceTranscriberGUI(ctk.CTk):
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
             text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13)
         )
-        self.speaker_file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.speaker_file_entry.pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
         _icon_btn(sp_file_row, "Browse", 80, height=38,
                   command=self.browse_speaker_file).pack(side="right")
 
         # Max speakers
         ms_row = ctk.CTkFrame(dc_inner, fg_color="transparent")
         ms_row.pack(fill="x", pady=(0, 12))
-        ctk.CTkLabel(ms_row, text="Max speakers:", font=_f(12), text_color=TEXT2).pack(side="left")
+        ctk.CTkLabel(ms_row, text="Max speakers:", font=_f(
+            12), text_color=TEXT2).pack(side="left")
         self.max_speakers_entry = ctk.CTkEntry(
             ms_row, textvariable=self.max_speakers_var,
             width=60, height=34, corner_radius=8,
@@ -748,17 +664,21 @@ class VoiceTranscriberGUI(ctk.CTk):
             scrollbar_button_color=SURFACE2
         )
         self.speaker_results_box.pack(fill="x", padx=16, pady=(0, 16))
-        self.speaker_results_box.insert("end", "Speaker detection results will appear here…")
+        self.speaker_results_box.insert(
+            "end", "Speaker detection results will appear here…")
         self.speaker_results_box.configure(state="disabled")
 
         # ─ Create Profile ───────────────────────────────────
-        profile_card = _card(body, "👤  CREATE SPEAKER PROFILE", title_color=GREEN)
-        profile_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=(0, 14))
+        profile_card = _card(
+            body, "👤  CREATE SPEAKER PROFILE", title_color=GREEN)
+        profile_card.grid(row=0, column=1, sticky="nsew",
+                          padx=(10, 0), pady=(0, 14))
 
         pc_inner = ctk.CTkFrame(profile_card, fg_color="transparent")
         pc_inner.pack(fill="x", padx=16, pady=(0, 16))
 
-        ctk.CTkLabel(pc_inner, text="Speaker name", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        ctk.CTkLabel(pc_inner, text="Speaker name", font=_f(
+            11), text_color=TEXT2).pack(anchor="w")
         self.profile_name_entry = ctk.CTkEntry(
             pc_inner, textvariable=self.profile_name_var,
             placeholder_text="e.g. John Doe",
@@ -768,7 +688,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         )
         self.profile_name_entry.pack(fill="x", pady=(4, 10))
 
-        ctk.CTkLabel(pc_inner, text="Audio sample", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        ctk.CTkLabel(pc_inner, text="Audio sample", font=_f(
+            11), text_color=TEXT2).pack(anchor="w")
         pf_row = ctk.CTkFrame(pc_inner, fg_color="transparent")
         pf_row.pack(fill="x", pady=(4, 10))
         self.profile_file_entry = ctk.CTkEntry(
@@ -778,7 +699,8 @@ class VoiceTranscriberGUI(ctk.CTk):
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
             text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13)
         )
-        self.profile_file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.profile_file_entry.pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
         _icon_btn(pf_row, "Browse", 80, height=38,
                   command=self.browse_profile_file).pack(side="right")
 
@@ -792,12 +714,14 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         # ─ Identify Speaker ─────────────────────────────────
         identify_card = _card(body, "🎯  IDENTIFY SPEAKER", title_color=PURPLE)
-        identify_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+        identify_card.grid(row=1, column=0, columnspan=2,
+                           sticky="ew", pady=(0, 14))
 
         id_inner = ctk.CTkFrame(identify_card, fg_color="transparent")
         id_inner.pack(fill="x", padx=16, pady=(0, 16))
 
-        ctk.CTkLabel(id_inner, text="Audio file to identify", font=_f(11), text_color=TEXT2).pack(anchor="w")
+        ctk.CTkLabel(id_inner, text="Audio file to identify",
+                     font=_f(11), text_color=TEXT2).pack(anchor="w")
         id_file_row = ctk.CTkFrame(id_inner, fg_color="transparent")
         id_file_row.pack(fill="x", pady=(4, 10))
         self.identify_file_entry = ctk.CTkEntry(
@@ -807,7 +731,8 @@ class VoiceTranscriberGUI(ctk.CTk):
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
             text_color=TEXT, placeholder_text_color=TEXT3, font=_f(13)
         )
-        self.identify_file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.identify_file_entry.pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
         _icon_btn(id_file_row, "Browse", 80, height=38,
                   command=self.browse_identify_file).pack(side="right")
 
@@ -830,7 +755,8 @@ class VoiceTranscriberGUI(ctk.CTk):
             scrollbar_button_color=SURFACE2
         )
         self.management_results_box.pack(fill="x", padx=16, pady=(0, 16))
-        self.management_results_box.insert("end", "Speaker identification results will appear here…")
+        self.management_results_box.insert(
+            "end", "Speaker identification results will appear here…")
         self.management_results_box.configure(state="disabled")
 
     # ─────────────────────────────────────────────────────────────
@@ -839,7 +765,7 @@ class VoiceTranscriberGUI(ctk.CTk):
 
     def _build_settings_page(self):
         page = ctk.CTkScrollableFrame(self.main_area, fg_color=BG, corner_radius=0,
-                                       scrollbar_button_color=SURFACE2)
+                                      scrollbar_button_color=SURFACE2)
         page.grid(row=0, column=0, sticky="nsew")
         page.grid_columnconfigure(0, weight=1)
         page.grid_remove()
@@ -848,7 +774,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Page header
         pg_hdr = ctk.CTkFrame(page, fg_color="transparent")
         pg_hdr.grid(row=0, column=0, sticky="ew", padx=28, pady=(24, 16))
-        ctk.CTkLabel(pg_hdr, text="Settings", font=_f(24, "bold"), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(pg_hdr, text="Settings", font=_f(
+            24, "bold"), text_color=TEXT).pack(side="left")
         ctk.CTkLabel(pg_hdr, text="  / Configure your preferences",
                      font=_f(13), text_color=TEXT3).pack(side="left", pady=(4, 0))
 
@@ -859,7 +786,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         # ─ Language & Engine ────────────────────────────────
         le_card = _card(body, "🌐  LANGUAGE & ENGINE", title_color=BLUE)
-        le_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 14))
+        le_card.grid(row=0, column=0, sticky="nsew",
+                     padx=(0, 10), pady=(0, 14))
 
         le_inner = ctk.CTkFrame(le_card, fg_color="transparent")
         le_inner.pack(fill="x", padx=16, pady=(0, 16))
@@ -886,7 +814,7 @@ class VoiceTranscriberGUI(ctk.CTk):
                      font=_f(12), text_color=TEXT2).pack(anchor="w")
         self.settings_engine_combo = ctk.CTkComboBox(
             le_inner,
-            values=["google"],
+            values=["google", "azure", "bing"],
             variable=self.engine_var,
             width=260, height=38, corner_radius=8,
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
@@ -900,13 +828,14 @@ class VoiceTranscriberGUI(ctk.CTk):
         # Engine note
         ctk.CTkLabel(
             le_inner,
-            text="ⓘ  Google requires internet",
+            text="ⓘ  Google requires internet  ·  Azure/Bing need API keys",
             font=_f(11), text_color=TEXT3, wraplength=280, justify="left"
         ).pack(anchor="w", pady=(8, 0))
 
         # ─ Audio Settings ───────────────────────────────────
         audio_card = _card(body, "🎛️  AUDIO SETTINGS", title_color=ORANGE)
-        audio_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=(0, 14))
+        audio_card.grid(row=0, column=1, sticky="nsew",
+                        padx=(10, 0), pady=(0, 14))
 
         ac_inner = ctk.CTkFrame(audio_card, fg_color="transparent")
         ac_inner.pack(fill="x", padx=16, pady=(0, 16))
@@ -932,33 +861,60 @@ class VoiceTranscriberGUI(ctk.CTk):
             font=_f(11), text_color=TEXT3
         ).pack(anchor="w", pady=(8, 0))
 
-        # ─ API key (persisted) ───────────────────────────────────
-        ai_card = _card(body, "✨  GEMINI API KEY", title_color=PURPLE)
+        # ─ AI Enhancement (Gemini 1.5 Flash, BYOK) ─────────────
+        ai_card = _card(body, "✨  AI ENHANCEMENT (GEMINI)", title_color=PURPLE)
         ai_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 14))
 
         ai_inner = ctk.CTkFrame(ai_card, fg_color="transparent")
         ai_inner.pack(fill="x", padx=16, pady=(0, 16))
 
+        # Model selector (required before using Troice)
         ctk.CTkLabel(
             ai_inner,
-            text="API key is saved locally. Change it here if needed.",
+            text="AI model (required before uploading audio)",
+            font=_f(12), text_color=TEXT2
+        ).pack(anchor="w")
+        self.ai_model_combo = ctk.CTkComboBox(
+            ai_inner,
+            values=["gemini-1.5-flash"],
+            variable=self.ai_model_var,
+            width=260, height=38, corner_radius=8,
+            fg_color=SURFACE2, border_color=BORDER, border_width=1,
+            button_color=SURFACE3, button_hover_color=BORDER2,
+            dropdown_fg_color=SURFACE, dropdown_hover_color=SURFACE2,
+            text_color=TEXT, dropdown_text_color=TEXT,
+            font=_f(13),
+        )
+        self.ai_model_combo.pack(anchor="w", pady=(4, 10))
+
+        # API key entry (BYOK)
+        ctk.CTkLabel(
+            ai_inner,
+            text="Gemini API key (BYOK)",
             font=_f(12), text_color=TEXT2
         ).pack(anchor="w")
         self.ai_api_key_entry = ctk.CTkEntry(
             ai_inner,
             textvariable=self.ai_api_key_var,
-            placeholder_text="Gemini API key (saved locally)",
+            placeholder_text="Paste your Google Gemini API key…",
             height=38, corner_radius=8,
             fg_color=SURFACE2, border_color=BORDER, border_width=1,
             text_color=TEXT, placeholder_text_color=TEXT3,
             font=_f(13),
             show="*",
         )
-        self.ai_api_key_entry.pack(fill="x", pady=(4, 8))
+        self.ai_api_key_entry.pack(fill="x", pady=(4, 4))
+
+        ctk.CTkLabel(
+            ai_inner,
+            text="ⓘ  Your key is used locally by Troice only. It is not stored or sent anywhere else.",
+            font=_f(11), text_color=TEXT3, wraplength=520, justify="left"
+        ).pack(anchor="w", pady=(4, 0))
 
         # ─ Presets section ──────────────────────────────────
         preset_card = _card(body, "⚡  QUICK PRESETS", title_color=ACCENT)
-        preset_card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+        preset_card.grid(row=2, column=0, columnspan=2,
+                         sticky="ew", pady=(0, 14))
 
         presets_inner = ctk.CTkFrame(preset_card, fg_color="transparent")
         presets_inner.pack(fill="x", padx=16, pady=(0, 16))
@@ -984,12 +940,14 @@ class VoiceTranscriberGUI(ctk.CTk):
                 height=38, corner_radius=8,
                 fg_color=SURFACE2, hover_color=SURFACE3,
                 text_color=TEXT, font=_f(12, "bold"),
-                command=lambda l=lang, e=eng, s=sr_: self._apply_preset(l, e, s)
+                command=lambda l=lang, e=eng, s=sr_: self._apply_preset(
+                    l, e, s)
             ).pack(side="left", padx=(0, 10))
 
         # ─ Save / Load ──────────────────────────────────────
         save_card = _card(body, "💾  PROFILE MANAGEMENT", title_color=GREEN)
-        save_card.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 28))
+        save_card.grid(row=3, column=0, columnspan=2,
+                       sticky="ew", pady=(0, 28))
 
         save_inner = ctk.CTkFrame(save_card, fg_color="transparent")
         save_inner.pack(fill="x", padx=16, pady=(0, 16))
@@ -1021,10 +979,10 @@ class VoiceTranscriberGUI(ctk.CTk):
         self.results_box.configure(state="normal")
         self.results_box.delete("1.0", "end")
         self.results_box.insert("end",
-            "Your transcription will appear here.\n\n"
-            "• Select a file and click ⚡ Transcribe, or\n"
-            "• Click ⏺ Record to transcribe live from your microphone.\n"
-        )
+                                "Your transcription will appear here.\n\n"
+                                "• Select a file and click ⚡ Transcribe, or\n"
+                                "• Click ⏺ Record to transcribe live from your microphone.\n"
+                                )
         self.results_box.configure(text_color=TEXT3)
 
     def _write_output(self, text: str, append: bool = False):
@@ -1088,7 +1046,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         if self._toast_after_id:
             self.after_cancel(self._toast_after_id)
 
-        toast = ctk.CTkFrame(self, fg_color=bg_color, corner_radius=10, height=46)
+        toast = ctk.CTkFrame(self, fg_color=bg_color,
+                             corner_radius=10, height=46)
         toast.place(relx=0.5, y=60, anchor="n")
 
         ctk.CTkLabel(
@@ -1097,7 +1056,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         ).pack()
 
         self._toast_widget = toast
-        self._toast_after_id = self.after(2800, lambda: toast.destroy() if toast.winfo_exists() else None)
+        self._toast_after_id = self.after(
+            2800, lambda: toast.destroy() if toast.winfo_exists() else None)
 
     # ─────────────────────────────────────────────────────────────
     #  Recording timer
@@ -1129,7 +1089,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         """Pulse the recording dot."""
         self._pulse_state = not self._pulse_state
         if self.is_recording and not self.is_paused:
-            self._rec_dot.configure(text_color=RED if self._pulse_state else SURFACE3)
+            self._rec_dot.configure(
+                text_color=RED if self._pulse_state else SURFACE3)
             self._pulse_id = self.after(600, self._start_pulse)
         else:
             if self.is_paused:
@@ -1150,7 +1111,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         self._live_center_active = True
         # Place roughly at the center of the output panel
         try:
-            self._live_center_progress.place(relx=0.5, rely=0.5, anchor="center")
+            self._live_center_progress.place(
+                relx=0.5, rely=0.5, anchor="center")
         except Exception:
             # If placement fails for any reason, just skip without crashing
             self._live_center_active = False
@@ -1247,7 +1209,8 @@ class VoiceTranscriberGUI(ctk.CTk):
                         time.sleep(1)
 
                 self.after(0, self._stop_live_center_progress)
-                self.after(0, lambda: self._show_toast("Recording complete", "green"))
+                self.after(0, lambda: self._show_toast(
+                    "Recording complete", "green"))
 
             except Exception as e:
                 self.after(0, lambda: self._show_toast(f"Error: {e}", "red"))
@@ -1287,7 +1250,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         self.btn_record.configure(state="normal")
         self.btn_pause.configure(state="disabled", text="⏸  Pause")
         self.btn_stop.configure(state="disabled")
-        self._rec_status_lbl.configure(text="Microphone ready", text_color=TEXT2)
+        self._rec_status_lbl.configure(
+            text="Microphone ready", text_color=TEXT2)
         self.btn_export.configure(state="normal")
         self.update_status("Recording stopped — results ready", GREEN, GREEN)
         self._show_toast("Recording stopped", "green")
@@ -1318,9 +1282,11 @@ class VoiceTranscriberGUI(ctk.CTk):
             info = self.audio_processor.get_audio_info(path)
             dur = info["duration"]
             if dur < 3600:
-                dur_str = f"{int(dur//60):02d}:{int(dur%60):02d}"
+                dur_str = f"{int(dur//60):02d}:{int(dur % 60):02d}"
             else:
-                h = int(dur//3600); m = int((dur%3600)//60); s = int(dur%60)
+                h = int(dur//3600)
+                m = int((dur % 3600)//60)
+                s = int(dur % 60)
                 dur_str = f"{h:02d}:{m:02d}:{s:02d}"
             name = os.path.basename(path)
             self._file_info_lbl.configure(
@@ -1345,7 +1311,8 @@ class VoiceTranscriberGUI(ctk.CTk):
             for p in paths:
                 if p not in self.file_queue:
                     self.file_queue.append(p)
-            self.update_status(f"📁  {len(self.file_queue)} file(s) queued", BLUE, BLUE)
+            self.update_status(
+                f"📁  {len(self.file_queue)} file(s) queued", BLUE, BLUE)
             self._show_toast(f"{len(self.file_queue)} files queued", "blue")
 
     def transcribe_file(self):
@@ -1406,12 +1373,15 @@ class VoiceTranscriberGUI(ctk.CTk):
                             header = (f"▶  File {idx}/{total}: {os.path.basename(path)}\n"
                                       + "─" * 48 + "\n")
                             self._append_output(header)
-                        self._append_output(text + ("\n\n" if total > 1 else ""))
+                        self._append_output(
+                            text + ("\n\n" if total > 1 else ""))
 
                 self._set_progress(1.0)
-                self.after(0, lambda: self.btn_export.configure(state="normal"))
+                self.after(
+                    0, lambda: self.btn_export.configure(state="normal"))
                 self.update_status("Transcription complete ✓", GREEN, GREEN)
-                self.after(0, lambda: self._show_toast("Transcription complete!", "green"))
+                self.after(0, lambda: self._show_toast(
+                    "Transcription complete!", "green"))
                 self.after(2000, lambda: self._set_progress(0))
 
             except Exception as e:
@@ -1523,10 +1493,12 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         def _thread():
             try:
-                audio_data, sr_ = self.audio_processor.load_audio(self.speaker_file_var.get())
+                audio_data, sr_ = self.audio_processor.load_audio(
+                    self.speaker_file_var.get())
                 self._set_progress(0.5)
                 max_sp = int(self.max_speakers_var.get() or 5)
-                result = self.speaker_detector.detect_speakers(audio_data, max_sp)
+                result = self.speaker_detector.detect_speakers(
+                    audio_data, max_sp)
                 self._set_progress(0.9)
 
                 if result.get("error"):
@@ -1540,16 +1512,20 @@ class VoiceTranscriberGUI(ctk.CTk):
                     for sp in result.get("speakers", []):
                         lines.append(f"Speaker: {sp['speaker_id']}")
                         lines.append(f"  Segments: {len(sp['segments'])}")
-                        lines.append(f"  Total Duration: {sp['total_duration']:.2f}s")
+                        lines.append(
+                            f"  Total Duration: {sp['total_duration']:.2f}s")
                         for seg in sp["segments"]:
-                            lines.append(f"    • {seg['start_time']:.2f}s → {seg['end_time']:.2f}s")
+                            lines.append(
+                                f"    • {seg['start_time']:.2f}s → {seg['end_time']:.2f}s")
                         lines.append("")
                     text = "\n".join(lines)
 
                 self._write_speaker_results(text)
                 self._set_progress(0)
-                self.update_status("Speaker detection complete ✓", GREEN, GREEN)
-                self.after(0, lambda: self._show_toast("Speakers detected!", "green"))
+                self.update_status(
+                    "Speaker detection complete ✓", GREEN, GREEN)
+                self.after(0, lambda: self._show_toast(
+                    "Speakers detected!", "green"))
 
             except Exception as e:
                 self._set_progress(0)
@@ -1560,7 +1536,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
     def create_speaker_profile(self):
         if not self.profile_name_var.get() or not self.profile_file_var.get():
-            self._show_toast("Enter speaker name and select audio file", "orange")
+            self._show_toast(
+                "Enter speaker name and select audio file", "orange")
             return
 
         self._set_progress(0.2)
@@ -1568,7 +1545,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         def _thread():
             try:
-                audio_data, sr_ = self.audio_processor.load_audio(self.profile_file_var.get())
+                audio_data, sr_ = self.audio_processor.load_audio(
+                    self.profile_file_var.get())
                 self._set_progress(0.5)
                 profile = self.speaker_detector.create_speaker_profile(
                     audio_data, self.profile_name_var.get())
@@ -1579,9 +1557,13 @@ class VoiceTranscriberGUI(ctk.CTk):
                         f"Name:         {profile['speaker_name']}\n"
                         f"Created at:   {profile['created_at']}\n"
                         f"Sample Rate:  {profile['sample_rate']}\n")
+
+                self.after(0, lambda: messagebox.showinfo("Profile Created",
+                                                          f"Speaker profile for '{profile['speaker_name']}' created!"))
                 self._set_progress(0)
                 self.update_status("Speaker profile created ✓", GREEN, GREEN)
-                self.after(0, lambda: self._show_toast("Profile created!", "green"))
+                self.after(0, lambda: self._show_toast(
+                    "Profile created!", "green"))
 
             except Exception as e:
                 self._set_progress(0)
@@ -1600,7 +1582,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         def _thread():
             try:
-                audio_data, sr_ = self.audio_processor.load_audio(self.identify_file_var.get())
+                audio_data, sr_ = self.audio_processor.load_audio(
+                    self.identify_file_var.get())
                 self._set_progress(0.5)
                 result = self.speaker_detector.identify_speaker(audio_data)
                 self._set_progress(0.9)
@@ -1617,7 +1600,8 @@ class VoiceTranscriberGUI(ctk.CTk):
                 self._write_identify_results(text)
                 self._set_progress(0)
                 self.update_status("Speaker identified ✓", GREEN, GREEN)
-                self.after(0, lambda: self._show_toast("Speaker identified!", "green"))
+                self.after(0, lambda: self._show_toast(
+                    "Speaker identified!", "green"))
 
             except Exception as e:
                 self._set_progress(0)
@@ -1662,28 +1646,15 @@ class VoiceTranscriberGUI(ctk.CTk):
             pass
         self.lang_combo.set(lang)
         self.engine_combo.set(engine)
-        self.update_status(f"Preset applied: {lang} · {engine} · {sr_} Hz", ACCENT)
-        self._show_toast("Preset applied!", "blue")
-
-    def _load_settings_into_vars(self):
-        """Load settings from file into StringVars (no UI). Normalize engine to valid value."""
         try:
-            if not os.path.exists(SETTINGS_PATH):
-                return
-            with open(SETTINGS_PATH, encoding="utf-8") as f:
-                s = json.load(f)
-            self.language_var.set(s.get("language", "en-US"))
-            engine = s.get("engine", "google")
-            if engine not in VALID_ENGINES:
-                engine = "google"
-            self.engine_var.set(engine)
-            self.sample_rate_var.set(str(s.get("sample_rate", "16000")))
-            self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
-            self.ai_api_key_var.set(s.get("gemini_api_key", ""))
-            self.transcriber.set_language(self.language_var.get())
-            self.transcriber.set_engine(engine)
+            self.settings_lang_combo.set(lang)
+            self.settings_engine_combo.set(engine)
+            self.settings_sr_combo.set(sr_)
         except Exception:
             pass
+        self.update_status(
+            f"Preset applied: {lang} · {engine} · {sr_} Hz", ACCENT)
+        self._show_toast("Preset applied!", "blue")
 
     def _sync_engine_combos(self):
         """Ensure engine combos show a valid value (fixes legacy e.g. sphinx)."""
@@ -1697,8 +1668,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         if hasattr(self, "settings_engine_combo"):
             self.settings_engine_combo.set(engine)
 
-    def _persist_settings(self):
-        """Save current settings (including API key) to disk."""
+    def save_settings(self):
         engine = self.engine_var.get()
         if engine not in VALID_ENGINES:
             engine = "google"
@@ -1708,41 +1678,58 @@ class VoiceTranscriberGUI(ctk.CTk):
             "engine": engine,
             "sample_rate": self.sample_rate_var.get(),
             "ai_model": self.ai_model_var.get(),
-            "gemini_api_key": (self.ai_api_key_var.get() or "").strip(),
+            # API key is BYOK; we do NOT persist it to disk for safety.
         }
         try:
-            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            with open("settings.json", "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=2)
+            self._show_toast("Settings saved!", "green")
         except Exception as e:
-            logger.warning(f"Could not save settings: {e}")
-
-    def save_settings(self):
-        self._persist_settings()
-        self._show_toast("Settings saved!", "green")
+            self._show_toast(f"Save failed: {e}", "red")
 
     def load_settings(self):
         try:
-            if not os.path.exists(SETTINGS_PATH):
-                self._show_toast("No saved settings found", "orange")
-                return
-            with open(SETTINGS_PATH, encoding="utf-8") as f:
-                s = json.load(f)
-            lang = s.get("language", "en-US")
-            engine = s.get("engine", "google")
-            if engine not in VALID_ENGINES:
-                engine = "google"
-            sr_ = str(s.get("sample_rate", "16000"))
-            self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
-            self.ai_api_key_var.set(s.get("gemini_api_key", ""))
-            try:
-                if hasattr(self, "ai_model_combo"):
+            if os.path.exists("settings.json"):
+                with open("settings.json", encoding="utf-8") as f:
+                    s = json.load(f)
+                lang = s.get("language", "en-US")
+                engine = s.get("engine", "google")
+                if engine not in VALID_ENGINES:
+                    engine = "google"
+                sr_ = str(s.get("sample_rate", "16000"))
+                self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
+                try:
                     self.ai_model_combo.set(self.ai_model_var.get())
-            except Exception:
-                pass
-            self._apply_preset(lang, engine, sr_)
-            self._show_toast("Settings loaded!", "green")
+                except Exception:
+                    pass
+                self._apply_preset(lang, engine, sr_)
+                self._show_toast("Settings loaded!", "green")
+            else:
+                self._show_toast("No saved settings found", "orange")
         except Exception as e:
             self._show_toast(f"Load failed: {e}", "red")
+
+    def _load_settings_silent(self):
+        try:
+            if os.path.exists("settings.json"):
+                with open("settings.json", encoding="utf-8") as f:
+                    s = json.load(f)
+                self.language_var.set(s.get("language", "en-US"))
+                engine = s.get("engine", "google")
+                if engine not in VALID_ENGINES:
+                    engine = "google"
+                self.engine_var.set(engine)
+                self.sample_rate_var.set(str(s.get("sample_rate", "16000")))
+                self.ai_model_var.set(s.get("ai_model", "gemini-1.5-flash"))
+                try:
+                    if hasattr(self, "ai_model_combo"):
+                        self.ai_model_combo.set(self.ai_model_var.get())
+                except Exception:
+                    pass
+                self.transcriber.set_language(s.get("language", "en-US"))
+                self.transcriber.set_engine(engine)
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────────────────────────
     #  AI enhancement helpers (Gemini 1.5 Flash BYOK)
@@ -1753,12 +1740,18 @@ class VoiceTranscriberGUI(ctk.CTk):
         model = (self.ai_model_var.get() or "").strip()
         key = (self.ai_api_key_var.get() or "").strip()
         if not model:
-            self._show_toast("Please select an AI model before using Troice.", "orange")
-            self.update_status("AI model required before uploading audio", ORANGE, ORANGE)
+            self._show_toast(
+                "Select an AI model in ⚙️ Settings first.", "orange")
+            self.update_status(
+                "AI model required — go to ⚙️ Settings", ORANGE, ORANGE)
+            self._nav_switch("settings")
             return False
         if not key:
-            self._show_toast("Please enter your Gemini API key (BYOK).", "orange")
-            self.update_status("Gemini API key required (BYOK)", ORANGE, ORANGE)
+            self._show_toast(
+                "Enter your Gemini API key in ⚙️ Settings.", "orange")
+            self.update_status(
+                "Gemini API key required — go to ⚙️ Settings", ORANGE, ORANGE)
+            self._nav_switch("settings")
             return False
         return True
 
@@ -1779,19 +1772,23 @@ class VoiceTranscriberGUI(ctk.CTk):
             try:
                 cfg = EnhancerConfig(
                     provider="google",
-                    model=(self.ai_model_var.get() or "gemini-1.5-flash").strip(),
+                    model=(self.ai_model_var.get()
+                           or "gemini-1.5-flash").strip(),
                     google_api_key=(self.ai_api_key_var.get() or "").strip(),
                 )
                 enhancer = AITextEnhancer(cfg)
                 result = enhancer.enhance(raw_text=raw, mode="enhance")
                 enhanced = result.enhanced_text or raw
 
-                self.after(0, lambda: self._write_output(enhanced, append=False))
-                self.after(0, lambda: self._show_toast("AI enhancement complete!", "green"))
+                self.after(0, lambda: self._write_output(
+                    enhanced, append=False))
+                self.after(0, lambda: self._show_toast(
+                    "AI enhancement complete!", "green"))
                 self.update_status("AI enhancement complete ✓", GREEN, GREEN)
             except Exception as e:
                 logger.error(f"AI enhancement error: {e}")
-                self.after(0, lambda: self._show_toast(f"AI error: {e}", "red"))
+                self.after(0, lambda: self._show_toast(
+                    f"AI error: {e}", "red"))
                 self.update_status(f"AI error: {e}", RED, RED)
             finally:
                 self.after(
@@ -1806,7 +1803,8 @@ class VoiceTranscriberGUI(ctk.CTk):
     def _load_speaker_profiles(self):
         try:
             if os.path.exists("speaker_profiles.json"):
-                self.speaker_detector.load_speaker_profiles("speaker_profiles.json")
+                self.speaker_detector.load_speaker_profiles(
+                    "speaker_profiles.json")
                 logger.info("Speaker profiles loaded")
         except Exception as e:
             logger.warning(f"Could not load speaker profiles: {e}")

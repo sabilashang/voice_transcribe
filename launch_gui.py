@@ -13,26 +13,27 @@ import subprocess
 
 def check_dependencies():
     """Check if required dependencies are installed"""
+    # (pip_name, import_name) pairs
     required_packages = [
-        'customtkinter',
-        'SpeechRecognition',
-        'librosa',
-        'soundfile',
-        'scikit-learn',
-        'numpy',
-        'pandas'
+        ('customtkinter', 'customtkinter'),
+        ('SpeechRecognition', 'speech_recognition'),
+        ('librosa', 'librosa'),
+        ('soundfile', 'soundfile'),
+        ('scikit-learn', 'sklearn'),
+        ('numpy', 'numpy'),
+        ('pandas', 'pandas'),
+        ('pydub', 'pydub'),
+        ('scipy', 'scipy'),
+        ('google-generativeai', 'google.generativeai'),
     ]
 
     missing_packages = []
 
-    for package in required_packages:
+    for pip_name, import_name in required_packages:
         try:
-            if package == 'SpeechRecognition':
-                import speech_recognition
-            else:
-                __import__(package)
+            __import__(import_name)
         except ImportError:
-            missing_packages.append(package)
+            missing_packages.append(pip_name)
 
     return missing_packages
 
