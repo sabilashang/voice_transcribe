@@ -4,6 +4,7 @@ Handles speech-to-text conversion with multiple recognition engines
 """
 
 import os
+import queue
 import speech_recognition as sr
 import pyaudio
 import wave
@@ -564,259 +565,124 @@ class VoiceTranscriber:
 
     def _transcribe_large_file(self, audio_file_path: str, duration: float, callback=None, live_display=None, enhance_audio: bool = True) -> Dict[str, any]:
         """
-        Transcribe large audio files using intelligent pause-based chunking
-        Breaks audio at natural pauses when approaching time limits (19-20 minutes)
+        Transcribe large audio files using a producer-consumer pipeline.
+
+        A background thread reads audio chunks from the file and places them into
+        a bounded queue while the main thread concurrently sends each buffered chunk
+        to the speech API.  This means the next chunk is already loaded in memory by
+        the time the current API call returns, eliminating the read-then-wait gap and
+        delivering results continuously as each chunk finishes.
 
         Args:
             audio_file_path: Path to WAV audio file
             duration: Duration of the audio file in seconds
-            callback: Optional callback function for progress updates
-            live_display: Optional callback function for live text display (text_chunk)
-            enhance_audio: If True, apply audio enhancement for better accuracy
+            callback: Optional callback (progress_float, message_str) for progress updates
+            live_display: Optional callback (text_str) called as each chunk is transcribed
+            enhance_audio: Unused; kept for API compatibility
 
         Returns:
             Dictionary with transcription results
         """
         try:
-            full_text = []
-            start_time = time.time()
-            offset = 0.0
-            chunk_num = 0
-
-            # Estimate total chunks for progress tracking
-            estimated_chunks = max(
-                1, int(duration / self.base_chunk_duration) + 1)
-
             logger.info(
-                f"Processing large file ({duration:.1f}s) with pause-based chunking")
+                f"Processing large file ({duration:.1f}s) with pipelined chunking")
 
-            # Open audio file once and process in chunks
-            with sr.AudioFile(audio_file_path) as source:
-                # Adjust for ambient noise
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
+            # ── Producer ──────────────────────────────────────────────────────────
+            # Reads audio chunks from the file in a background thread and puts them
+            # into chunk_queue so the consumer (API calls) can work in parallel.
+            # Queue size of 3 keeps at most ~90 s of audio buffered in RAM at once.
+            chunk_queue: queue.Queue = queue.Queue(maxsize=3)
+            producer_exc: list = [None]
 
-                # Get sample rate for pause detection
-                sample_rate = source.SAMPLE_RATE
+            def _producer():
+                try:
+                    with sr.AudioFile(audio_file_path) as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=1)
+                        sample_rate = source.SAMPLE_RATE
+                        offset = 0.0
+                        chunk_num = 0
 
-                while offset < duration:
-                    try:
-                        # Calculate time elapsed in current "super-chunk" (for pause detection)
-                        # Track cumulative time to detect when approaching 19-20 minute limits
-                        cumulative_time = offset
-                        time_since_last_break = cumulative_time % self.max_chunk_duration
-                        remaining_to_limit = self.max_chunk_duration - time_since_last_break
-
-                        # Determine chunk duration based on proximity to limit
-                        if remaining_to_limit < 60 and time_since_last_break >= self.chunk_warning_threshold:
-                            # We're approaching the 19-20 minute limit - look for pauses
-                            # Try to find a pause to break at within the next minute
-                            search_end = min(
-                                offset + remaining_to_limit + 30, duration)
-                            pause_position = self._find_pause_in_audio(
-                                audio_file_path, offset, search_end, sample_rate)
-
-                            if pause_position and pause_position > offset:
-                                # Found a pause - use it as chunk boundary
-                                chunk_duration = pause_position - offset
-                                logger.info(
-                                    f"Found pause at {pause_position:.1f}s (approaching limit), breaking chunk at {chunk_duration:.1f}s")
-                            else:
-                                # No pause found, use remaining time or base chunk
-                                chunk_duration = min(
-                                    remaining_to_limit, self.base_chunk_duration)
-                                logger.info(
-                                    f"No pause found near limit, using {chunk_duration:.1f}s chunk")
-                        else:
-                            # Normal chunking - use base chunk size
-                            chunk_duration = min(
-                                self.base_chunk_duration, duration - offset)
-
-                        # Ensure we don't exceed remaining duration
-                        chunk_duration = min(chunk_duration, duration - offset)
-
-                        if chunk_duration <= 0:
-                            break
-
-                        # Update progress
-                        progress = 0.2 + (offset / duration) * 0.7
-                        if callback:
-                            callback(
-                                progress, f"Processing chunk {chunk_num + 1} ({chunk_duration:.1f}s at {offset:.1f}s)...")
-
-                        # Record chunk - stream advances naturally, do NOT pass offset
-                        audio = self.recognizer.record(
-                            source, duration=chunk_duration)
-
-                        # Transcribe chunk
-                        text = self._recognize_speech(audio)
-
-                        # Remove disfluencies
-                        if text.strip():
-                            text = self._remove_disfluencies(text)
-                            full_text.append(text)
-                            logger.info(
-                                f"Chunk {chunk_num + 1} transcribed ({chunk_duration:.1f}s): {text[:50]}...")
-
-                            # Display text live if callback provided
-                            if live_display:
-                                # Add space between chunks
-                                live_display(text + " ")
-
-                        # Move to next chunk
-                        offset += chunk_duration
-                        chunk_num += 1
-
-                    except sr.UnknownValueError:
-                        # Don't skip - keep retrying this chunk up to 3 times
-                        retry_count = 0
-                        max_retries = 3
-                        chunk_succeeded = False
-
-                        while retry_count < max_retries and not chunk_succeeded:
-                            retry_count += 1
-                            logger.warning(
-                                f"Could not transcribe chunk {chunk_num + 1}, retry {retry_count}/{max_retries}...")
-                            # Exponential backoff
-                            time.sleep(0.5 * retry_count)
-
-                            try:
-                                # Recalculate chunk duration for retry
-                                time_since_last_break = offset % self.max_chunk_duration
-                                remaining_to_limit = self.max_chunk_duration - time_since_last_break
-
-                                if remaining_to_limit < 60 and time_since_last_break >= self.chunk_warning_threshold:
-                                    chunk_duration_retry = min(
-                                        remaining_to_limit, self.base_chunk_duration)
-                                else:
-                                    chunk_duration_retry = min(
-                                        self.base_chunk_duration, duration - offset)
-
-                                chunk_duration_retry = min(
-                                    chunk_duration_retry, duration - offset)
-
-                                # Try again - stream already advanced, can't re-read same chunk
-                                audio = self.recognizer.record(
-                                    source, duration=chunk_duration_retry)
-                                text = self._recognize_speech(
-                                    audio, retry_on_error=False)
-
-                                if text.strip():
-                                    text = self._remove_disfluencies(text)
-                                    full_text.append(text)
-                                    logger.info(
-                                        f"Chunk {chunk_num + 1} succeeded on retry {retry_count}")
-                                    chunk_succeeded = True
-
-                                    # Display text live if callback provided
-                                    if live_display:
-                                        live_display(text + " ")
-                            except:
-                                if retry_count >= max_retries:
-                                    logger.error(
-                                        f"Chunk {chunk_num + 1} failed after {max_retries} retries, skipping")
-                                    break
-
-                        # Move to next chunk only if succeeded or exhausted retries
-                        if chunk_succeeded:
-                            # Recalculate chunk duration for moving forward
+                        while offset < duration:
                             time_since_last_break = offset % self.max_chunk_duration
                             remaining_to_limit = self.max_chunk_duration - time_since_last_break
 
-                            if remaining_to_limit < 60 and time_since_last_break >= self.chunk_warning_threshold:
-                                chunk_duration = min(
-                                    remaining_to_limit, self.base_chunk_duration)
-                            else:
-                                chunk_duration = min(
-                                    self.base_chunk_duration, duration - offset)
-
-                            chunk_duration = min(
-                                chunk_duration, duration - offset)
-                            offset += chunk_duration
-                            chunk_num += 1
-                        elif retry_count >= max_retries:
-                            # Skip failed chunk and move forward
-                            offset += min(self.base_chunk_duration,
-                                          duration - offset)
-                            chunk_num += 1
-                        continue
-
-                    except Exception as e:
-                        # For other errors, retry up to 3 times
-                        retry_count = 0
-                        max_retries = 3
-                        chunk_succeeded = False
-
-                        while retry_count < max_retries and not chunk_succeeded:
-                            retry_count += 1
-                            logger.error(
-                                f"Error transcribing chunk {chunk_num + 1}: {str(e)}, retry {retry_count}/{max_retries}")
-                            time.sleep(1 * retry_count)  # Exponential backoff
-
-                            try:
-                                # Recalculate chunk duration for retry
-                                time_since_last_break = offset % self.max_chunk_duration
-                                remaining_to_limit = self.max_chunk_duration - time_since_last_break
-
-                                if remaining_to_limit < 60 and time_since_last_break >= self.chunk_warning_threshold:
-                                    chunk_duration_retry = min(
-                                        remaining_to_limit, self.base_chunk_duration)
-                                else:
-                                    chunk_duration_retry = min(
-                                        self.base_chunk_duration, duration - offset)
-
-                                chunk_duration_retry = min(
-                                    chunk_duration_retry, duration - offset)
-
-                                audio = self.recognizer.record(
-                                    source, duration=chunk_duration_retry)
-                                text = self._recognize_speech(
-                                    audio, retry_on_error=False)
-
-                                if text.strip():
-                                    text = self._remove_disfluencies(text)
-                                    full_text.append(text)
+                            if (remaining_to_limit < 60 and
+                                    time_since_last_break >= self.chunk_warning_threshold):
+                                # Approaching the 19-20 min API limit — find a natural pause
+                                search_end = min(offset + remaining_to_limit + 30, duration)
+                                pause_pos = self._find_pause_in_audio(
+                                    audio_file_path, offset, search_end, sample_rate)
+                                if pause_pos and pause_pos > offset:
+                                    chunk_duration = pause_pos - offset
                                     logger.info(
-                                        f"Chunk {chunk_num + 1} succeeded on retry {retry_count}")
-                                    chunk_succeeded = True
-
-                                    if live_display:
-                                        live_display(text + " ")
-                            except Exception as retry_error:
-                                if retry_count >= max_retries:
-                                    logger.error(
-                                        f"Chunk {chunk_num + 1} failed after {max_retries} retries")
-                                    break
-
-                        if chunk_succeeded:
-                            # Recalculate chunk duration for moving forward
-                            time_since_last_break = offset % self.max_chunk_duration
-                            remaining_to_limit = self.max_chunk_duration - time_since_last_break
-
-                            if remaining_to_limit < 60 and time_since_last_break >= self.chunk_warning_threshold:
-                                chunk_duration = min(
-                                    remaining_to_limit, self.base_chunk_duration)
+                                        f"Pause found at {pause_pos:.1f}s, chunk={chunk_duration:.1f}s")
+                                else:
+                                    chunk_duration = min(remaining_to_limit, self.base_chunk_duration)
                             else:
-                                chunk_duration = min(
-                                    self.base_chunk_duration, duration - offset)
+                                chunk_duration = min(self.base_chunk_duration, duration - offset)
 
-                            chunk_duration = min(
-                                chunk_duration, duration - offset)
+                            chunk_duration = min(chunk_duration, duration - offset)
+                            if chunk_duration <= 0:
+                                break
+
+                            # record() is fast (reads local bytes); blocks only if queue is full
+                            audio = self.recognizer.record(source, duration=chunk_duration)
+                            chunk_queue.put((chunk_num, offset, chunk_duration, audio))
+
                             offset += chunk_duration
                             chunk_num += 1
-                        elif retry_count >= max_retries:
-                            # Skip failed chunk and move forward
-                            offset += min(self.base_chunk_duration,
-                                          duration - offset)
-                            chunk_num += 1
-                        continue
 
-            # Combine all chunks and apply final disfluency removal
-            combined_text = " ".join(full_text)
-            combined_text = self._remove_disfluencies(combined_text)
+                except Exception as exc:
+                    producer_exc[0] = exc
+                finally:
+                    chunk_queue.put(None)  # sentinel — consumer will stop
+
+            producer_thread = threading.Thread(target=_producer, daemon=True)
+            producer_thread.start()
+
+            # ── Consumer ──────────────────────────────────────────────────────────
+            # Pulls buffered chunks and fires the (slow) API call while the producer
+            # is already loading the next chunk.
+            full_text: list = []
+            start_time = time.time()
+            chunks_processed = 0
+
+            while True:
+                item = chunk_queue.get()
+                if item is None:
+                    break  # producer finished
+
+                chunk_num, offset, chunk_duration, audio = item
+
+                progress = 0.2 + (offset / duration) * 0.7
+                if callback:
+                    callback(
+                        progress,
+                        f"Transcribing chunk {chunk_num + 1} "
+                        f"({offset:.0f}s – {offset + chunk_duration:.0f}s)…"
+                    )
+
+                # _recognize_speech already retries internally on transient errors
+                text = self._recognize_speech(audio)
+                if text.strip():
+                    text = self._remove_disfluencies(text)
+                    full_text.append(text)
+                    logger.info(
+                        f"Chunk {chunk_num + 1} ({chunk_duration:.1f}s): {text[:60]}…")
+                    if live_display:
+                        live_display(text + " ")
+
+                chunks_processed += 1
+
+            # Re-raise any error from the producer after draining the queue
+            if producer_exc[0]:
+                raise producer_exc[0]
+
+            combined_text = self._remove_disfluencies(" ".join(full_text))
             processing_time = time.time() - start_time
 
             if callback:
-                callback(0.95, "Finalizing results...")
+                callback(0.95, "Finalizing results…")
 
             result = {
                 'file_path': audio_file_path,
@@ -826,7 +692,7 @@ class VoiceTranscriber:
                 'processing_time': processing_time,
                 'timestamp': datetime.now().isoformat(),
                 'confidence': None,
-                'chunks_processed': chunk_num
+                'chunks_processed': chunks_processed,
             }
 
             if callback:
