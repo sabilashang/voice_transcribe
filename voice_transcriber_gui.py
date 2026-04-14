@@ -143,6 +143,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         self._live_center_active = False
         self._live_center_job = None
         self._live_center_value = 0.0
+        self._live_center_direction = 1  # 1 = filling, -1 = emptying (ping-pong)
 
         # StringVars
         self.file_path_var = tk.StringVar()
@@ -157,6 +158,7 @@ class VoiceTranscriberGUI(ctk.CTk):
         # AI enhancement (Gemini BYOK)
         self.ai_model_var = tk.StringVar(value="gemini-1.5-flash")
         self.ai_api_key_var = tk.StringVar()
+        self._api_key_visible = False
 
         # Build
         self._build_ui()
@@ -386,7 +388,7 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         # File entry row
         file_row = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_row.pack(fill="x", padx=16, pady=(4, 12))
+        file_row.pack(fill="x", padx=16, pady=(4, 6))
 
         self.file_entry = ctk.CTkEntry(
             file_row, textvariable=self.file_path_var,
@@ -404,6 +406,12 @@ class VoiceTranscriberGUI(ctk.CTk):
             font=_f(13, "bold"), command=self.browse_file
         )
         self.btn_browse.pack(side="right")
+
+        # File info label — immediately under the file entry for instant feedback
+        self._file_info_lbl = ctk.CTkLabel(
+            file_card, text="", font=_f(11), text_color=TEXT2
+        )
+        self._file_info_lbl.pack(anchor="w", padx=16, pady=(0, 8))
 
         # Options row
         opt_row = ctk.CTkFrame(file_card, fg_color="transparent")
@@ -466,14 +474,8 @@ class VoiceTranscriberGUI(ctk.CTk):
         )
         self.btn_add_file.pack(side="left")
 
-        # File info label
-        self._file_info_lbl = ctk.CTkLabel(
-            file_card, text="", font=_f(11), text_color=TEXT2
-        )
-        self._file_info_lbl.pack(anchor="w", padx=16, pady=(0, 10))
-
         # ─ Quick Tips Card ──────────────────────────────────
-        tips_card = _card(left, "💡  TIPS", title_color=TEXT3)
+        tips_card = _card(left, "💡  TIPS", title_color=TEXT2)
         tips_card.pack(fill="x", pady=(0, 14))
 
         tips = [
@@ -498,8 +500,6 @@ class VoiceTranscriberGUI(ctk.CTk):
         right.grid_rowconfigure(1, weight=1)
         right.grid_columnconfigure(0, weight=1)
 
-        # Set min width for right column
-        right.configure(width=620)
         page.grid_columnconfigure(1, minsize=580)
         self._transcribe_right_panel = right
 
@@ -868,10 +868,10 @@ class VoiceTranscriberGUI(ctk.CTk):
         ai_inner = ctk.CTkFrame(ai_card, fg_color="transparent")
         ai_inner.pack(fill="x", padx=16, pady=(0, 16))
 
-        # Model selector (required before using Troice)
+        # Model selector
         ctk.CTkLabel(
             ai_inner,
-            text="AI model (required before uploading audio)",
+            text="AI model  ·  required to enable transcription & recording",
             font=_f(12), text_color=TEXT2
         ).pack(anchor="w")
         self.ai_model_combo = ctk.CTkComboBox(
@@ -887,14 +887,28 @@ class VoiceTranscriberGUI(ctk.CTk):
         )
         self.ai_model_combo.pack(anchor="w", pady=(4, 10))
 
-        # API key entry (BYOK)
+        # API key row: entry + show/hide toggle
+        api_key_hdr = ctk.CTkFrame(ai_inner, fg_color="transparent")
+        api_key_hdr.pack(fill="x")
         ctk.CTkLabel(
-            ai_inner,
+            api_key_hdr,
             text="Gemini API key (BYOK)",
             font=_f(12), text_color=TEXT2
-        ).pack(anchor="w")
+        ).pack(side="left")
+        ctk.CTkButton(
+            api_key_hdr,
+            text="↗ Get free key",
+            width=100, height=22, corner_radius=4,
+            fg_color="transparent", hover_color=SURFACE2,
+            text_color=BLUE, font=_f(11),
+            command=lambda: __import__('webbrowser').open(
+                'https://aistudio.google.com/app/apikey')
+        ).pack(side="right")
+
+        api_key_row = ctk.CTkFrame(ai_inner, fg_color="transparent")
+        api_key_row.pack(fill="x", pady=(4, 4))
         self.ai_api_key_entry = ctk.CTkEntry(
-            ai_inner,
+            api_key_row,
             textvariable=self.ai_api_key_var,
             placeholder_text="Paste your Google Gemini API key…",
             height=38, corner_radius=8,
@@ -903,11 +917,16 @@ class VoiceTranscriberGUI(ctk.CTk):
             font=_f(13),
             show="*",
         )
-        self.ai_api_key_entry.pack(fill="x", pady=(4, 4))
+        self.ai_api_key_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.btn_toggle_key = _icon_btn(
+            api_key_row, "👁", 44, height=38,
+            command=self._toggle_api_key_visibility
+        )
+        self.btn_toggle_key.pack(side="right")
 
         ctk.CTkLabel(
             ai_inner,
-            text="ⓘ  Your key is used locally by Troice only. It is not stored or sent anywhere else.",
+            text="ⓘ  Your key is stored locally on this device and only sent to Google's Gemini API.",
             font=_f(11), text_color=TEXT3, wraplength=520, justify="left"
         ).pack(anchor="w", pady=(4, 0))
 
@@ -945,7 +964,7 @@ class VoiceTranscriberGUI(ctk.CTk):
             ).pack(side="left", padx=(0, 10))
 
         # ─ Save / Load ──────────────────────────────────────
-        save_card = _card(body, "💾  PROFILE MANAGEMENT", title_color=GREEN)
+        save_card = _card(body, "💾  SAVE / LOAD SETTINGS", title_color=GREEN)
         save_card.grid(row=3, column=0, columnspan=2,
                        sticky="ew", pady=(0, 28))
 
@@ -1048,7 +1067,8 @@ class VoiceTranscriberGUI(ctk.CTk):
 
         toast = ctk.CTkFrame(self, fg_color=bg_color,
                              corner_radius=10, height=46)
-        toast.place(relx=0.5, y=60, anchor="n")
+        # Place centered over main content area (sidebar is ~226px of total width)
+        toast.place(relx=0.59, y=70, anchor="n")
 
         ctk.CTkLabel(
             toast, text=message, font=_f(13, "bold"),
@@ -1119,16 +1139,20 @@ class VoiceTranscriberGUI(ctk.CTk):
             return
 
         self._live_center_value = 0.0
+        self._live_center_direction = 1
 
         def _tick():
             if not self._live_center_active or not self.is_recording or self.is_paused:
-                # Hide when not actively recording
                 self._live_center_progress.place_forget()
                 return
-            # Simple looping animation 0 → 1 → 0
-            self._live_center_value += 0.03
+            # Smooth ping-pong animation: 0 → 1 → 0 → 1 …
+            self._live_center_value += 0.025 * self._live_center_direction
             if self._live_center_value >= 1.0:
+                self._live_center_value = 1.0
+                self._live_center_direction = -1
+            elif self._live_center_value <= 0.0:
                 self._live_center_value = 0.0
+                self._live_center_direction = 1
             self._live_center_progress.set(self._live_center_value)
             self._live_center_job = self.after(60, _tick)
 
@@ -1401,7 +1425,9 @@ class VoiceTranscriberGUI(ctk.CTk):
     def clear_results(self):
         self.transcriber.clear_history()
         self._set_output_placeholder()
-        self._update_stats()
+        # Reset stats directly — _update_stats() would count placeholder text as words
+        self._words_lbl.configure(text="0 words")
+        self._chars_lbl.configure(text="0 characters")
         self.btn_export.configure(state="disabled")
         self.update_status("Output cleared", TEXT2)
 
@@ -1734,6 +1760,14 @@ class VoiceTranscriberGUI(ctk.CTk):
     # ─────────────────────────────────────────────────────────────
     #  AI enhancement helpers (Gemini 1.5 Flash BYOK)
     # ─────────────────────────────────────────────────────────────
+
+    def _toggle_api_key_visibility(self):
+        """Toggle the Gemini API key entry between hidden (***) and visible."""
+        self._api_key_visible = not self._api_key_visible
+        self.ai_api_key_entry.configure(
+            show="" if self._api_key_visible else "*")
+        self.btn_toggle_key.configure(
+            text="🙈" if self._api_key_visible else "👁")
 
     def _ensure_ai_configured(self) -> bool:
         """Ensure an AI model and API key are set before audio is used."""
